@@ -4,7 +4,6 @@
 
 ---
 
-### Repository Description (README Introduction)
 
 # Syntria Backend
 
