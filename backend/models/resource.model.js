@@ -130,16 +130,15 @@ resourceSchema.index({
   status: 1,
 });
 
-availabilityWindowSchema.pre("validate", function validateWindow(next) {
-  if (this.endAt <= this.startAt) {
-    return next(
-      new Error(
-        "Resource availability end time must be after start time.",
-      ),
-    );
+availabilityWindowSchema.pre(
+  "validate",
+  function validateWindow() {
+    if (this.endAt <= this.startAt) {
+      throw new Error(
+        "Resource availability end time must be after start time."
+      );
+    }
   }
-
-  return next();
-});
+);
 
 export const Resource = model("Resource", resourceSchema);
