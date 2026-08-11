@@ -1,64 +1,297 @@
-const { Initiative } = require("../models");
+import {
+ updatePhaseService,deletePhaseService,addPhaseService,deleteInitiativeService,submitInitiativeService, updateInitiativeService,createInitiativeService,getInitiativeByIdService
+,deleteResourceRequirementService,addResourceRequirementService,getResourceRequirementByIdService,updateResourceRequirementService,
+} from "../services/initiative.service.js";
 
-const createInitiative = async (req, res, next) => {
-  try {
-    const initiative = await Initiative.create(req.body);
+import {
+  asyncHandler,
+} from "../utils/async-handler.js";
+
+
+export const createInitiative =
+  asyncHandler(async (req, res) => {
+    const initiative =
+      await createInitiativeService({
+        payload: req.body,
+        authenticatedUser: req.user,
+      });
 
     return res.status(201).json({
       success: true,
-      message: "Initiative created successfully.",
-      data: initiative,
+      message:
+        "Initiative created successfully.",
+      data: {
+        initiative,
+      },
     });
-  } catch (error) {
-    return next(error);
-  }
-};
+  });
 
-const getInitiatives = async (req, res, next) => {
-  try {
-    const initiatives = await Initiative.find()
-      .populate("createdBy", "firstName lastName email")
-      .populate("municipality", "name type")
-      .populate("leadOrganization", "name type")
-      .sort({ createdAt: -1 });
+  export const getInitiativeById =
+  asyncHandler(async (req, res) => {
+    const initiative =
+      await getInitiativeByIdService({
+        initiativeId:
+          req.params.initiativeId,
 
-    return res.status(200).json({
-      success: true,
-      count: initiatives.length,
-      data: initiatives,
-    });
-  } catch (error) {
-    return next(error);
-  }
-};
-
-const getInitiativeById = async (req, res, next) => {
-  try {
-    const initiative = await Initiative.findById(
-      req.params.initiativeId
-    )
-      .populate("createdBy", "firstName lastName email")
-      .populate("municipality", "name type")
-      .populate("leadOrganization", "name type");
-
-    if (!initiative) {
-      return res.status(404).json({
-        success: false,
-        message: "Initiative not found.",
+        authenticatedUser:
+          req.user,
       });
-    }
 
     return res.status(200).json({
       success: true,
-      data: initiative,
+      data: {
+        initiative,
+      },
     });
-  } catch (error) {
-    return next(error);
-  }
-};
+  });
 
-module.exports = {
-  createInitiative,
-  getInitiatives,
-  getInitiativeById,
-};
+  export const updateInitiative =
+  asyncHandler(async (req, res) => {
+    const initiative =
+      await updateInitiativeService({
+        initiativeId:
+          req.params.initiativeId,
+
+        payload:
+          req.body,
+
+        authenticatedUser:
+          req.user,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Initiative updated successfully.",
+      data: {
+        initiative,
+      },
+    });
+  });
+  export const deleteInitiative =
+  asyncHandler(async (req, res) => {
+    const result =
+      await deleteInitiativeService({
+        initiativeId:
+          req.params.initiativeId,
+
+        authenticatedUser:
+          req.user,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Initiative deleted successfully.",
+      data: result,
+    });
+  });
+
+  export const submitInitiative =
+  asyncHandler(async (req, res) => {
+    const initiative =
+      await submitInitiativeService({
+        initiativeId:
+          req.params.initiativeId,
+
+        authenticatedUser:
+          req.user,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Initiative submitted successfully.",
+      data: {
+        initiative,
+      },
+    });
+  });
+  export const addPhase =
+  asyncHandler(async (req, res) => {
+    const phase = await addPhaseService({
+      initiativeId:
+        req.params.initiativeId,
+
+      payload:
+        req.body,
+
+      authenticatedUser:
+        req.user,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message:
+        "Phase added successfully.",
+      data: {
+        phase,
+      },
+    });
+  });
+  export const updatePhase =
+  asyncHandler(async (req, res) => {
+    const phase = await updatePhaseService({
+      initiativeId: req.params.initiativeId,
+      phaseId: req.params.phaseId,
+      payload: req.body,
+      authenticatedUser: req.user,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Phase updated successfully.",
+      data: {
+        phase,
+      },
+    });
+  });
+
+export const deletePhase =
+  asyncHandler(async (req, res) => {
+    const result = await deletePhaseService({
+      initiativeId: req.params.initiativeId,
+      phaseId: req.params.phaseId,
+      authenticatedUser: req.user,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Phase deleted successfully.",
+      data: result,
+    });
+  });
+  export const addTask = asyncHandler(
+  async (req, res) => {
+    const task = await addTaskService({
+      initiativeId: req.params.initiativeId,
+      payload: req.body,
+      authenticatedUser: req.user,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Task added successfully.",
+      data: { task },
+    });
+  }
+);
+
+export const getTaskById = asyncHandler(
+  async (req, res) => {
+    const task = await getTaskByIdService({
+      initiativeId: req.params.initiativeId,
+      taskId: req.params.taskId,
+      authenticatedUser: req.user,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { task },
+    });
+  }
+);
+
+export const updateTask = asyncHandler(
+  async (req, res) => {
+    const task = await updateTaskService({
+      initiativeId: req.params.initiativeId,
+      taskId: req.params.taskId,
+      payload: req.body,
+      authenticatedUser: req.user,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Task updated successfully.",
+      data: { task },
+    });
+  }
+);
+
+export const deleteTask = asyncHandler(
+  async (req, res) => {
+    const result = await deleteTaskService({
+      initiativeId: req.params.initiativeId,
+      taskId: req.params.taskId,
+      authenticatedUser: req.user,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Task deleted successfully.",
+      data: result,
+    });
+  }
+);
+export const addResourceRequirement =
+  asyncHandler(async (req, res) => {
+    const requirement =
+      await addResourceRequirementService({
+        initiativeId: req.params.initiativeId,
+        payload: req.body,
+        authenticatedUser: req.user,
+      });
+
+    return res.status(201).json({
+      success: true,
+      message:
+        "Resource requirement added successfully.",
+      data: {
+        requirement,
+      },
+    });
+  });
+
+export const getResourceRequirementById =
+  asyncHandler(async (req, res) => {
+    const requirement =
+      await getResourceRequirementByIdService({
+        initiativeId: req.params.initiativeId,
+        requirementId: req.params.requirementId,
+      });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        requirement,
+      },
+    });
+  });
+
+export const updateResourceRequirement =
+  asyncHandler(async (req, res) => {
+    const requirement =
+      await updateResourceRequirementService({
+        initiativeId: req.params.initiativeId,
+        requirementId: req.params.requirementId,
+        payload: req.body,
+        authenticatedUser: req.user,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Resource requirement updated successfully.",
+      data: {
+        requirement,
+      },
+    });
+  });
+
+export const deleteResourceRequirement =
+  asyncHandler(async (req, res) => {
+    const result =
+      await deleteResourceRequirementService({
+        initiativeId: req.params.initiativeId,
+        requirementId: req.params.requirementId,
+        authenticatedUser: req.user,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Resource requirement deleted successfully.",
+      data: result,
+    });
+  });

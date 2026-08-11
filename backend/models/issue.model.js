@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 import {
   ISSUE_STATUSES,
-  WORK_ITEM_TYPES,
+  WORK_ITEM_TYPES,MUNICIPALITY_REVIEW_DECISIONS
 } from "../constants/enums.js";
 
 import { WorkItem } from "./work-item.model.js";
@@ -103,41 +103,14 @@ const duplicateCandidateSchema = new Schema(
   },
 );
 
-const supportSchema = new Schema(
-  {
-    user: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
 
-    comment: {
-      type: String,
-      trim: true,
-      maxlength: 500,
-    },
-
-    supportedAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  {
-    _id: true,
-  },
-);
 
 const municipalityReviewSchema = new Schema(
   {
     decision: {
       type: String,
-      enum: [
-        "pending",
-        "resolve_internally",
-        "convert_to_initiative",
-        "reject",
-      ],
-      default: "pending",
+      enum: Object.values(MUNICIPALITY_REVIEW_DECISIONS),
+      default: MUNICIPALITY_REVIEW_DECISIONS.UNDER_REVIEW,
     },
 
     reviewedBy: {
@@ -157,6 +130,8 @@ const municipalityReviewSchema = new Schema(
       type: Date,
       default: null,
     },
+
+
   },
   {
     _id: false,
@@ -211,15 +186,20 @@ const issueSchema = new Schema({
     default: null,
   },
 
-  supports: {
-    type: [supportSchema],
-    default: [],
-  },
+  supporting_users: {
+  type: [
+    {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+  ],
+  default: [],
+},
 
-  municipalityReview: {
-    type: municipalityReviewSchema,
-    default: () => ({}),
-  },
+municipalityReview: {
+  type: municipalityReviewSchema,
+  default: null,
+},
 
   convertedInitiative: {
     type: Schema.Types.ObjectId,
@@ -241,7 +221,7 @@ issueSchema.index({
 });
 
 issueSchema.index({
-  "supports.user": 1,
+  "supporting_users": 1,
 });
 
 issueSchema.index({
@@ -255,17 +235,12 @@ issueSchema.index({
  * Do not use function(next).
  * Throwing an error stops validation.
  */
-issueSchema.pre("validate", function validateIssueMedia() {
-  if (
-    this.status !== ISSUE_STATUSES.DRAFT &&
-    (!Array.isArray(this.media) || this.media.length === 0)
-  ) {
-    throw new Error(
-      "At least one supporting media item is required before submitting an issue.",
-    );
-  }
-});
-
+// issueSchema.pre(
+//   "validate",
+//   function validateIssueMedia() {
+//     ...
+//   }
+// );
 export const Issue =
   mongoose.models.Issue ||
   WorkItem.discriminator(

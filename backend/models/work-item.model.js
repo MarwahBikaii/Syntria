@@ -7,41 +7,7 @@ import { mediaSchema } from "./embedded/media.schema.js";
 
 const { Schema, model } = mongoose;
 
-const statusHistorySchema = new Schema(
-  {
-    fromStatus: {
-      type: String,
-      default: null,
-    },
 
-    toStatus: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    changedBy: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-
-    reason: {
-      type: String,
-      trim: true,
-      maxlength: 1000,
-      default: null,
-    },
-
-    changedAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  {
-    _id: true,
-  },
-);
 
 const workItemSchema = new Schema(
   {
@@ -85,45 +51,14 @@ const workItemSchema = new Schema(
       index: true,
     },
 
-    assignedMunicipalityDepartment: {
-      departmentId: {
-        type: Schema.Types.ObjectId,
-        default: null,
-      },
 
-      departmentName: {
-        type: String,
-        trim: true,
-        maxlength: 150,
-        default: null,
-      },
-    },
-
-    status: {
-      type: String,
-      required: true,
-      index: true,
-    },
-
-    statusHistory: {
-      type: [statusHistorySchema],
-      default: [],
-    },
 
     tags: {
       type: [String],
       default: [],
     },
 
-    submittedAt: {
-      type: Date,
-      default: null,
-    },
-
-    archivedAt: {
-      type: Date,
-      default: null,
-    },
+    
   },
   {
     timestamps: true,

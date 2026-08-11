@@ -1,76 +1,127 @@
-// import express from "express";
+import express from "express";
 
-// import {
-//   convertIssueToInitiative,
-//   createIssue,
-//   deleteIssue,
-//   getIssueById,
-//   getIssues,
-//   reviewIssue,
-//   supportExistingIssue,
-// } from "../controllers/issue.controller.js";
+import {
+  convertIssueToInitiative,reviewIssue,submitIssue,removeIssueSupport,createIssue,getIssues,updateIssue,removeIssue,getIssueById,supportExistingIssue
+} from "../controllers/issue.controller.js";
 
-// import { USER_ROLES } from "../constants/enums.js";
+import {
+  USER_ROLES,
+} from "../constants/enums.js";
 
-// import { authenticate } from "../middleware/auth.middleware.js";
-// import { authorizeRoles } from "../middleware/authorize.middleware.js";
-// import { parseIssueFields } from "../middleware/parse-issue-fields.middleware.js";
-// import { uploadIssueMedia } from "../middleware/upload.middleware.js";
-// import {requireOrganization} from "../middleware/organization-access.middleware.js"
-// const router = express.Router();
+import {
+  authenticate,
+} from "../middleware/auth.middleware.js";
 
-// router.use(authenticate);
+import {
+  authorizeRoles,
+} from "../middleware/authorize.middleware.js";
 
-// router
-//   .route("/")
-//   .get(
-//     authorizeRoles(
-//       USER_ROLES.COMMUNITY_MEMBER,
-//       USER_ROLES.MUNICIPALITY,
-//     ),
-//     getIssues,
-//   )
-//   .post(
-//     authorizeRoles(USER_ROLES.COMMUNITY_MEMBER),
-//     uploadIssueMedia,
-//     parseIssueFields,
-//     createIssue,
-//   );
+import {
+  uploadIssueMedia,
+} from "../middleware/upload.middleware.js";
 
-// router.post(
-//   "/:issueId/support-existing",
-//   authorizeRoles(USER_ROLES.COMMUNITY_MEMBER),
-//   supportExistingIssue,
-// );
+import {
+  parseIssueFields,
+} from "../middleware/parse-issue-fields.middleware.js";
 
-// router.patch(
-//   "/:issueId/review",
-//   authorizeRoles(USER_ROLES.MUNICIPALITY),
-//   requireOrganization,
-//   reviewIssue,
-// );
+const router = express.Router();
 
-// router.post(
-//   "/:issueId/convert-to-initiative",
-//   authorizeRoles(USER_ROLES.MUNICIPALITY),
-//   convertIssueToInitiative,
-// );
+router.use(authenticate);
 
-// router
-//   .route("/:issueId")
-//   .get(
-//     authorizeRoles(
-//       USER_ROLES.COMMUNITY_MEMBER,
-//       USER_ROLES.MUNICIPALITY,
-//     ),
-//     getIssueById,
-//   )
-//   .delete(
-//     authorizeRoles(
-//       USER_ROLES.COMMUNITY_MEMBER,
-//       USER_ROLES.MUNICIPALITY,
-//     ),
-//     deleteIssue,
-//   );
+router.post(
+  "/",
+  authorizeRoles(
+    USER_ROLES.COMMUNITY_MEMBER,
+    USER_ROLES.COMMUNITY_ORGANIZATION
+  ),
+  uploadIssueMedia,
+  parseIssueFields,
+  createIssue
+);
 
-// export default router;
+
+
+router.get(
+  "/myReports",
+  authorizeRoles(
+    USER_ROLES.COMMUNITY_MEMBER,
+    USER_ROLES.COMMUNITY_ORGANIZATION
+  ),
+
+  getIssues
+);
+
+router.get(
+  "/:issueId",
+  authorizeRoles(
+    USER_ROLES.COMMUNITY_MEMBER,
+    USER_ROLES.COMMUNITY_ORGANIZATION
+  ),
+
+  getIssueById
+);
+
+
+router.patch(
+  "/:issueId",
+  authorizeRoles(
+    USER_ROLES.COMMUNITY_MEMBER,
+    USER_ROLES.COMMUNITY_ORGANIZATION
+  ),
+  parseIssueFields,
+  updateIssue
+);
+router.patch(
+  "/:issueId/submit",
+  authorizeRoles(
+    USER_ROLES.COMMUNITY_MEMBER,
+    USER_ROLES.COMMUNITY_ORGANIZATION
+  ),
+
+  submitIssue
+);
+
+router.patch(
+  "/:issueId/review",
+  authorizeRoles(
+    USER_ROLES.MUNICIPALITY
+  ),
+  reviewIssue
+);
+
+
+router.delete(
+  "/:issueId",
+  authorizeRoles(
+    USER_ROLES.COMMUNITY_MEMBER,
+    USER_ROLES.COMMUNITY_ORGANIZATION
+  ),
+ removeIssue
+);
+
+router.post(
+  "/:issueId/support",
+  authorizeRoles(
+    USER_ROLES.COMMUNITY_MEMBER,
+    USER_ROLES.COMMUNITY_ORGANIZATION
+  ),
+  supportExistingIssue
+);
+router.delete(
+  "/:issueId/support",
+  authorizeRoles(
+    USER_ROLES.COMMUNITY_MEMBER
+  ),
+  removeIssueSupport
+);
+
+export default router;
+router.post(
+  "/:issueId/convert-to-initiative",
+
+  authorizeRoles(
+    USER_ROLES.MUNICIPALITY
+  ),
+
+  convertIssueToInitiative
+);

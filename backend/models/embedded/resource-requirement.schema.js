@@ -42,7 +42,12 @@ export const resourceRequirementSchema = new Schema(
       trim: true,
       maxlength: 50,
     },
-
+    
+estimatedCost: {
+    type:Number,
+    min:0,
+    default:null
+},
     requiredFrom: {
       type: Date,
     },

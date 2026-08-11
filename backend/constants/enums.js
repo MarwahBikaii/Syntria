@@ -48,7 +48,11 @@ export const ISSUE_STATUSES = Object.freeze({
   REJECTED: "rejected",
   CLOSED: "closed",
 });
-
+export const MUNICIPALITY_REVIEW_DECISIONS = Object.freeze({
+  RESOLVE_INTERNALLY: "resolve_internally",
+  CONVERT_TO_INITIATIVE: "convert_to_initiative",
+  REJECT: "reject",
+});
 export const INITIATIVE_STATUSES = Object.freeze({
   DRAFT: "draft",
   SUBMITTED: "submitted",
@@ -82,6 +86,8 @@ export const DEPENDENCY_TYPES = Object.freeze({
   RESOURCE: "resource",
   APPROVAL: "approval",
 });
+
+
 
 export const OFFER_STATUSES = Object.freeze({
   SUBMITTED: "submitted",

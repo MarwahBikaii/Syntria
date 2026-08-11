@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-
 const { Schema } = mongoose;
 
 export const locationSchema = new Schema(
@@ -10,13 +9,6 @@ export const locationSchema = new Schema(
       trim: true,
       maxlength: 500,
     },
-
-    municipalityName: {
-      type: String,
-      trim: true,
-      maxlength: 150,
-    },
-
     district: {
       type: String,
       trim: true,
