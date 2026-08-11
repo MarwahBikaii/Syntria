@@ -1,6 +1,6 @@
 import {
  updatePhaseService,deletePhaseService,addPhaseService,deleteInitiativeService,submitInitiativeService, updateInitiativeService,createInitiativeService,getInitiativeByIdService
-,deleteResourceRequirementService,addResourceRequirementService,getResourceRequirementByIdService,updateResourceRequirementService,
+,reviewInitiativeApprovalService,deleteResourceRequirementService,addResourceRequirementService,getResourceRequirementByIdService,updateResourceRequirementService,
 } from "../services/initiative.service.js";
 
 import {
@@ -293,5 +293,38 @@ export const deleteResourceRequirement =
       message:
         "Resource requirement deleted successfully.",
       data: result,
+    });
+  });
+
+  export const reviewInitiativeApproval =
+  asyncHandler(async (req, res) => {
+    const {
+      decision,
+      notes,
+    } = req.body;
+
+    if (!decision) {
+      throw AppError.badRequest(
+        "Approval decision is required."
+      );
+    }
+
+    const initiative =
+      await reviewInitiativeApprovalService({
+        initiativeId:
+          req.params.initiativeId,
+        decision,
+        notes,
+        authenticatedUser:
+          req.user,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Initiative approval reviewed successfully.",
+      data: {
+        initiative,
+      },
     });
   });

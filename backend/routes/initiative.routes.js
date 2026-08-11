@@ -1,7 +1,7 @@
 import express from "express";
 
 import {
-  getResourceRequirementById,addResourceRequirement,deleteResourceRequirement,updateResourceRequirement,getTaskById,addTask,deleteTask,updateTask,updatePhase,deletePhase,addPhase,submitInitiative,deleteInitiative,createInitiative,getInitiativeById,updateInitiative
+  reviewInitiativeApproval,getResourceRequirementById,addResourceRequirement,deleteResourceRequirement,updateResourceRequirement,getTaskById,addTask,deleteTask,updateTask,updatePhase,deletePhase,addPhase,submitInitiative,deleteInitiative,createInitiative,getInitiativeById,updateInitiative
 } from "../controllers/initiative.controller.js";
 
 import {
@@ -157,5 +157,12 @@ router.delete(
     USER_ROLES.COMMUNITY_ORGANIZATION
   ),
   deleteResourceRequirement
+);
+router.patch(
+  "/:initiativeId/approval",
+  authorizeRoles(
+    USER_ROLES.MUNICIPALITY
+  ),
+  reviewInitiativeApproval
 );
 export default router;

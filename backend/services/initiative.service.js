@@ -1913,3 +1913,129 @@ export const deleteResourceRequirementService = async ({
     deletedRequirementId: requirementId,
   };
 };
+export const reviewInitiativeApprovalService = async ({
+  initiativeId,
+  decision,
+  notes,
+  authenticatedUser,
+}) => {
+  ensureValidObjectId(
+    initiativeId,
+    "initiativeId"
+  );
+
+  const allowedDecisions = [
+    "approved",
+    "rejected",
+    "changes_requested",
+  ];
+
+  if (!allowedDecisions.includes(decision)) {
+    throw AppError.badRequest(
+      "Invalid initiative approval decision."
+    );
+  }
+
+  const initiative = await Initiative.findById(
+    initiativeId
+  );
+
+  if (!initiative) {
+    throw AppError.notFound(
+      "Initiative not found."
+    );
+  }
+
+  if (
+    initiative.status !==
+      INITIATIVE_STATUSES.SUBMITTED &&
+    initiative.status !==
+      INITIATIVE_STATUSES.CHANGES_REQUESTED
+  ) {
+    throw AppError.badRequest(
+      "Only submitted initiatives or initiatives with requested changes can be reviewed."
+    );
+  }
+
+  const canReview =
+    authenticatedUser.accountType ===
+      USER_ROLES.MUNICIPALITY &&
+    (
+      authenticatedUser.memberships?.some(
+        (membership) =>
+          membership.status ===
+            ACCOUNT_STATUSES.ACTIVE &&
+          [
+            USER_ROLES_IN_ORGANIZATION.OWNER,
+            USER_ROLES_IN_ORGANIZATION.ADMIN,
+          ].includes(membership.role) &&
+          membership.organizationId.toString() ===
+            initiative.municipality.toString()
+      ) ?? false
+    );
+
+  if (!canReview) {
+    throw AppError.forbidden(
+      "You are not authorized to review this initiative."
+    );
+  }
+
+  initiative.approval = {
+    decision,
+    reviewedBy:
+      authenticatedUser._id,
+    notes:
+      notes?.trim() || null,
+    reviewedAt:
+      new Date(),
+    revisionNumber:
+      (initiative.approval
+        ?.revisionNumber ?? 0) +
+      1,
+  };
+
+  if (decision === "approved") {
+    initiative.status =
+      INITIATIVE_STATUSES.APPROVED;
+
+    initiative.readiness.municipalityApproved =
+      true;
+
+    /*
+     * Resource requirements are now verified
+     * and can participate in matching.
+     */
+    for (
+      const requirement of
+      initiative.resourceRequirements
+    ) {
+      requirement.isVerifiedRequest =
+        true;
+    }
+  }
+
+  if (decision === "rejected") {
+    initiative.status =
+      INITIATIVE_STATUSES.REJECTED;
+
+    initiative.readiness.municipalityApproved =
+      false;
+  }
+
+  if (
+    decision === "changes_requested"
+  ) {
+    initiative.status =
+      INITIATIVE_STATUSES.CHANGES_REQUESTED;
+
+    initiative.readiness.municipalityApproved =
+      false;
+  }
+
+  initiative.readiness.calculatedAt =
+    new Date();
+
+  await initiative.save();
+
+  return initiative;
+};
