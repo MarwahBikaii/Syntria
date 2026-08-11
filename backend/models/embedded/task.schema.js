@@ -20,11 +20,11 @@ const taskDependencySchema = new Schema(
       default: null,
     },
 
-    resourceRequirementId: {
-      type: Schema.Types.ObjectId,
-      default: null,
-    },
-
+resourceRequestId: {
+  type: Schema.Types.ObjectId,
+  ref: "ResourceRequest",
+  default: null,
+},
     approvalType: {
       type: String,
       trim: true,
@@ -190,6 +190,14 @@ export const taskSchema = new Schema(
     _id: true,
   }
 );
+if (
+  this.type === DEPENDENCY_TYPES.RESOURCE &&
+  !this.resourceRequestId
+) {
+  throw new Error(
+    "resourceRequestId is required for a resource dependency."
+  );
+}
 
 /**
  * Validate task schedule.

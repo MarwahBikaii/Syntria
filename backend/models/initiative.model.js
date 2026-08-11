@@ -8,7 +8,6 @@ import {
 
 import { WorkItem } from "./work-item.model.js";
 import { taskSchema } from "./embedded/task.schema.js";
-import { resourceRequirementSchema } from "./embedded/resource-requirement.schema.js";
 
 const { Schema } = mongoose;
 
@@ -233,10 +232,7 @@ const initiativeSchema = new Schema({
     default: [],
   },
 
-  resourceRequirements: {
-    type: [resourceRequirementSchema],
-    default: [],
-  },
+
 
   availableResources: [
     {

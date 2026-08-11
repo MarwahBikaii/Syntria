@@ -49,6 +49,7 @@ export const ISSUE_STATUSES = Object.freeze({
   CLOSED: "closed",
 });
 export const MUNICIPALITY_REVIEW_DECISIONS = Object.freeze({
+
   RESOLVE_INTERNALLY: "resolve_internally",
   CONVERT_TO_INITIATIVE: "convert_to_initiative",
   REJECT: "reject",
@@ -105,3 +106,12 @@ export const APPLICATION_STATUSES = Object.freeze({
   WITHDRAWN: "withdrawn",
   COMPLETED: "completed",
 });
+
+export const RESOURCE_REQUEST_STATUSES =
+  Object.freeze({
+    PENDING: "pending",
+    ACCEPTED: "accepted",
+    REJECTED: "rejected",
+    WITHDRAWN: "withdrawn",
+    FULFILLED: "fulfilled",
+  });

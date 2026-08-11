@@ -4,6 +4,7 @@ import issueRoutes from "./issue.routes.js";
 import userRoutes from "./user.routes.js";
 import authRoutes from "./auth.routes.js";
 import resourceRoutes from "./resource.routes.js";
+import contributionOfferRoutes from "./contribution-offer.routes.js";
 
 const router = express.Router();
 
@@ -20,5 +21,5 @@ router.use("/users", userRoutes);
 router.use("/issues", issueRoutes);
 router.use("/initiatives", initiativeRoutes);
 router.use("/resources", resourceRoutes);
-
+router.use("/contributionOffers", contributionOfferRoutes);
 export default router;

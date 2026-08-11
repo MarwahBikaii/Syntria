@@ -3,7 +3,7 @@ import express from "express";
 import {
   reviewInitiativeApproval,getResourceRequirementById,addResourceRequirement,deleteResourceRequirement,updateResourceRequirement,getTaskById,addTask,deleteTask,updateTask,updatePhase,deletePhase,addPhase,submitInitiative,deleteInitiative,createInitiative,getInitiativeById,updateInitiative
 } from "../controllers/initiative.controller.js";
-
+import {createResourceRequest} from "../controllers/resource-request.controller.js"
 import {
   authenticate,
 } from "../middleware/auth.middleware.js";
@@ -164,5 +164,12 @@ router.patch(
     USER_ROLES.MUNICIPALITY
   ),
   reviewInitiativeApproval
+);
+router.post(
+  "/:initiativeId/resource-requests",
+  authorizeRoles(
+    USER_ROLES.COMMUNITY_ORGANIZATION
+  ),
+  createResourceRequest
 );
 export default router;
