@@ -1,16 +1,26 @@
 import mongoose from "mongoose";
 
-import { OFFER_STATUSES } from "../constants/enums.js";
+import {
+  OFFER_STATUSES,
+} from "../constants/enums.js";
 
 const { Schema, model } = mongoose;
 
 const contributionItemSchema = new Schema(
   {
-    resourceRequirementId: {
+    /*
+     * Requirement being fulfilled.
+     */
+    resourceRequirement: {
       type: Schema.Types.ObjectId,
+      ref: "ResourceRequirement",
       required: true,
+      index: true,
     },
 
+    /*
+     * Actual resource being offered.
+     */
     resource: {
       type: Schema.Types.ObjectId,
       ref: "Resource",
@@ -27,7 +37,62 @@ const contributionItemSchema = new Schema(
       type: String,
       required: true,
       trim: true,
+      maxlength: 50,
     },
+
+    /*
+     * ---------------------------------------------------
+     * Financial offer
+     * ---------------------------------------------------
+     */
+
+    unitPrice: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    additionalCost: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+
+    /*
+     * Calculated automatically:
+     *
+     * quantityOffered * unitPrice
+     * + additionalCost
+     */
+    totalCost: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+
+    currency: {
+      type: String,
+      required: true,
+      trim: true,
+      uppercase: true,
+      minlength: 3,
+      maxlength: 3,
+      default: "USD",
+    },
+
+    /*
+     * Donations automatically have zero cost.
+     */
+    isDonation: {
+      type: Boolean,
+      default: false,
+    },
+
+    /*
+     * ---------------------------------------------------
+     * Availability
+     * ---------------------------------------------------
+     */
 
     availableFrom: {
       type: Date,
@@ -43,11 +108,47 @@ const contributionItemSchema = new Schema(
       type: String,
       trim: true,
       maxlength: 2000,
+      default: null,
     },
   },
   {
     _id: true,
-  },
+  }
+);
+
+/*
+ * -------------------------------------------------------
+ * Contribution item validation + cost calculation
+ * -------------------------------------------------------
+ */
+
+contributionItemSchema.pre(
+  "validate",
+  function validateContributionItem() {
+    if (
+      this.availableFrom &&
+      this.availableUntil &&
+      this.availableUntil <=
+        this.availableFrom
+    ) {
+      throw new Error(
+        "Offer availability end date must be after start date."
+      );
+    }
+
+    if (this.isDonation) {
+      this.unitPrice = 0;
+      this.additionalCost = 0;
+      this.totalCost = 0;
+
+      return;
+    }
+
+    this.totalCost =
+      this.quantityOffered *
+        this.unitPrice +
+      this.additionalCost;
+  }
 );
 
 const contributionOfferSchema = new Schema(
@@ -75,10 +176,15 @@ const contributionOfferSchema = new Schema(
     items: {
       type: [contributionItemSchema],
       required: true,
+
       validate: {
         validator(items) {
-          return Array.isArray(items) && items.length > 0;
+          return (
+            Array.isArray(items) &&
+            items.length > 0
+          );
         },
+
         message:
           "A contribution offer must contain at least one resource item.",
       },
@@ -86,8 +192,11 @@ const contributionOfferSchema = new Schema(
 
     status: {
       type: String,
-      enum: Object.values(OFFER_STATUSES),
-      default: OFFER_STATUSES.SUBMITTED,
+      enum: Object.values(
+        OFFER_STATUSES
+      ),
+      default:
+        OFFER_STATUSES.SUBMITTED,
       index: true,
     },
 
@@ -95,22 +204,26 @@ const contributionOfferSchema = new Schema(
       type: String,
       trim: true,
       maxlength: 3000,
+      default: null,
     },
 
     review: {
       reviewedBy: {
         type: Schema.Types.ObjectId,
         ref: "User",
+        default: null,
       },
 
       notes: {
         type: String,
         trim: true,
         maxlength: 2000,
+        default: null,
       },
 
       reviewedAt: {
         type: Date,
+        default: null,
       },
     },
 
@@ -123,13 +236,21 @@ const contributionOfferSchema = new Schema(
       type: String,
       trim: true,
       maxlength: 2000,
+      default: null,
     },
   },
   {
     timestamps: true,
     versionKey: false,
-  },
+    collection: "contributionoffers",
+  }
 );
+
+/*
+ * -------------------------------------------------------
+ * Indexes
+ * -------------------------------------------------------
+ */
 
 contributionOfferSchema.index({
   initiative: 1,
@@ -142,7 +263,14 @@ contributionOfferSchema.index({
   createdAt: -1,
 });
 
-export const ContributionOffer = model(
-  "ContributionOffer",
-  contributionOfferSchema,
-);
+contributionOfferSchema.index({
+  "items.resourceRequirement": 1,
+  status: 1,
+});
+
+export const ContributionOffer =
+  mongoose.models.ContributionOffer ||
+  model(
+    "ContributionOffer",
+    contributionOfferSchema
+  );

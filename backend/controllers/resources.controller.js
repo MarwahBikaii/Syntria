@@ -5,7 +5,7 @@ import {
   getResourcesService,
   getResourceByIdService,
   updateResourceService,
-  deleteResourceService,
+  deleteResourceService,getMatchingResourcesService
 } from "../services/resource.service.js";
 
 
@@ -105,5 +105,20 @@ export const deleteResource =
       message:
         "Resource deleted successfully.",
       data: result,
+    });
+  });
+  export const getMatchingResources =
+  asyncHandler(async (req, res) => {
+    const matches =
+      await getMatchingResourcesService({
+        initiativeId:
+          req.params.initiativeId,
+      });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        matches,
+      },
     });
   });

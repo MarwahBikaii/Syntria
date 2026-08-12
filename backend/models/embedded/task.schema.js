@@ -11,20 +11,29 @@ const taskDependencySchema = new Schema(
   {
     type: {
       type: String,
-      enum: Object.values(DEPENDENCY_TYPES),
+      enum: Object.values(
+        DEPENDENCY_TYPES
+      ),
       required: true,
     },
 
+    /*
+     * Embedded task _id from the same initiative.
+     */
     taskId: {
       type: Schema.Types.ObjectId,
       default: null,
     },
 
-resourceRequestId: {
-  type: Schema.Types.ObjectId,
-  ref: "ResourceRequest",
-  default: null,
-},
+    /*
+     * Separate ResourceRequirement collection.
+     */
+    resourceRequirement: {
+      type: Schema.Types.ObjectId,
+      ref: "ResourceRequirement",
+      default: null,
+    },
+
     approvalType: {
       type: String,
       trim: true,
@@ -43,14 +52,12 @@ resourceRequestId: {
   }
 );
 
-/**
- * Validate the dependency according to its type.
- */
 taskDependencySchema.pre(
   "validate",
   function validateDependency() {
     if (
-      this.type === DEPENDENCY_TYPES.TASK &&
+      this.type ===
+        DEPENDENCY_TYPES.TASK &&
       !this.taskId
     ) {
       throw new Error(
@@ -59,16 +66,18 @@ taskDependencySchema.pre(
     }
 
     if (
-      this.type === DEPENDENCY_TYPES.RESOURCE &&
-      !this.resourceRequirementId
+      this.type ===
+        DEPENDENCY_TYPES.RESOURCE &&
+      !this.resourceRequirement
     ) {
       throw new Error(
-        "resourceRequirementId is required for a resource dependency."
+        "resourceRequirement is required for a resource dependency."
       );
     }
 
     if (
-      this.type === DEPENDENCY_TYPES.APPROVAL &&
+      this.type ===
+        DEPENDENCY_TYPES.APPROVAL &&
       !this.approvalType
     ) {
       throw new Error(
@@ -95,8 +104,7 @@ export const taskSchema = new Schema(
     },
 
     /*
-     * References an embedded phase _id
-     * inside the same Initiative document.
+     * Embedded Phase ID from the same Initiative.
      */
     phaseId: {
       type: Schema.Types.ObjectId,
@@ -111,8 +119,11 @@ export const taskSchema = new Schema(
 
     status: {
       type: String,
-      enum: Object.values(TASK_STATUSES),
-      default: TASK_STATUSES.LOCKED,
+      enum: Object.values(
+        TASK_STATUSES
+      ),
+      default:
+        TASK_STATUSES.LOCKED,
     },
 
     dependencies: {
@@ -142,6 +153,11 @@ export const taskSchema = new Schema(
       min: 0,
       default: 0,
     },
+      assignedVolunteers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }]
+,
 
     completedBy: {
       type: Schema.Types.ObjectId,
@@ -190,25 +206,15 @@ export const taskSchema = new Schema(
     _id: true,
   }
 );
-if (
-  this.type === DEPENDENCY_TYPES.RESOURCE &&
-  !this.resourceRequestId
-) {
-  throw new Error(
-    "resourceRequestId is required for a resource dependency."
-  );
-}
 
-/**
- * Validate task schedule.
- */
 taskSchema.pre(
   "validate",
   function validateTaskSchedule() {
     if (
       this.scheduledStartAt &&
       this.scheduledEndAt &&
-      this.scheduledEndAt <= this.scheduledStartAt
+      this.scheduledEndAt <=
+        this.scheduledStartAt
     ) {
       throw new Error(
         "Task scheduled end date must be after its start date."

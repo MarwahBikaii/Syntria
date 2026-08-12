@@ -203,7 +203,7 @@ export const createIssueService = async ({
           : [],
 
       status:
-        ISSUE_STATUSES.PENDING,
+        ISSUE_STATUSES.DRAFT,
 
       submittedAt: null,
 
@@ -250,9 +250,9 @@ export const submitIssueService = async ({
     );
   }
 
-  if (issue.status !== ISSUE_STATUSES.PENDING) {
+  if (issue.status !== ISSUE_STATUSES.DRAFT) {
     throw AppError.conflict(
-      "Only pending issues can be submitted."
+      "Only draft issues can be submitted."
     );
   }
 

@@ -1,8 +1,22 @@
 import mongoose from "mongoose";
 
 import { Initiative } from "../models/initiative.model.js";
+import {
+  ResourceRequirement,
+} from "../models/resource-requirement.model.js";
+
+import {
+  ResourceRequest,
+} from "../models/resource-request.model.js";
+
+import {
+  ResourceReservation,
+} from "../models/resource-reservation.model.js";
+
+import {
+  ContributionOffer,
+} from "../models/contribution-offer.model.js";
 import Organization from "../models/organizationModel.js";
-import { Resource } from "../models/resource.model.js";
 import {
   USER_ROLES,ACCOUNT_STATUSES,
   ORGANIZATION_TYPES,
@@ -29,6 +43,418 @@ const ensureValidObjectId = (value, fieldName) => {
   }
 };
 
+const validateTaskDependencies = async ({
+  dependencies,
+  initiative,
+  currentTaskId = null,
+}) => {
+  if (!Array.isArray(dependencies)) {
+    throw AppError.badRequest(
+      "dependencies must be an array."
+    );
+  }
+
+  const normalizedDependencies = [];
+
+  const seenDependencies = new Set();
+
+  const resourceRequirementIds = [];
+
+  for (
+    let index = 0;
+    index < dependencies.length;
+    index += 1
+  ) {
+    const dependency =
+      dependencies[index];
+
+    if (
+      !dependency ||
+      typeof dependency !== "object"
+    ) {
+      throw AppError.badRequest(
+        `Dependency at index ${index} is invalid.`
+      );
+    }
+
+    if (
+      !Object.values(
+        DEPENDENCY_TYPES
+      ).includes(dependency.type)
+    ) {
+      throw AppError.badRequest(
+        `Dependency at index ${index} has an invalid type.`
+      );
+    }
+
+    /*
+     * =============================================
+     * TASK DEPENDENCY
+     * =============================================
+     */
+
+    if (
+      dependency.type ===
+      DEPENDENCY_TYPES.TASK
+    ) {
+      if (!dependency.taskId) {
+        throw AppError.badRequest(
+          `taskId is required for task dependency at index ${index}.`
+        );
+      }
+
+      ensureValidObjectId(
+        dependency.taskId,
+        `dependencies[${index}].taskId`
+      );
+
+      /*
+       * Task cannot depend on itself.
+       */
+      if (
+        currentTaskId &&
+        dependency.taskId.toString() ===
+          currentTaskId.toString()
+      ) {
+        throw AppError.badRequest(
+          "A task cannot depend on itself."
+        );
+      }
+
+      /*
+       * Because tasks are embedded, the referenced
+       * task must exist inside THIS Initiative.
+       */
+      const referencedTask =
+        initiative.tasks.id(
+          dependency.taskId
+        );
+
+      if (!referencedTask) {
+        throw AppError.badRequest(
+          `Task dependency ${dependency.taskId} does not exist in this initiative.`
+        );
+      }
+
+      const dependencyKey =
+        `task:${dependency.taskId.toString()}`;
+
+      if (
+        seenDependencies.has(
+          dependencyKey
+        )
+      ) {
+        throw AppError.badRequest(
+          "Duplicate task dependency detected."
+        );
+      }
+
+      seenDependencies.add(
+        dependencyKey
+      );
+
+      normalizedDependencies.push({
+        type:
+          DEPENDENCY_TYPES.TASK,
+
+        taskId:
+          dependency.taskId,
+
+        resourceRequirement:
+          null,
+
+        approvalType:
+          null,
+
+        description:
+          dependency.description
+            ?.trim() || null,
+      });
+
+      continue;
+    }
+
+    /*
+     * =============================================
+     * RESOURCE DEPENDENCY
+     * =============================================
+     */
+
+    if (
+      dependency.type ===
+      DEPENDENCY_TYPES.RESOURCE
+    ) {
+      if (
+        !dependency.resourceRequirement
+      ) {
+        throw AppError.badRequest(
+          `resourceRequirement is required for resource dependency at index ${index}.`
+        );
+      }
+
+      ensureValidObjectId(
+        dependency.resourceRequirement,
+        `dependencies[${index}].resourceRequirement`
+      );
+
+      const requirementId =
+        dependency.resourceRequirement.toString();
+
+      const dependencyKey =
+        `resource:${requirementId}`;
+
+      if (
+        seenDependencies.has(
+          dependencyKey
+        )
+      ) {
+        throw AppError.badRequest(
+          "Duplicate resource dependency detected."
+        );
+      }
+
+      seenDependencies.add(
+        dependencyKey
+      );
+
+      resourceRequirementIds.push(
+        requirementId
+      );
+
+      normalizedDependencies.push({
+        type:
+          DEPENDENCY_TYPES.RESOURCE,
+
+        taskId:
+          null,
+
+        resourceRequirement:
+          dependency.resourceRequirement,
+
+        approvalType:
+          null,
+
+        description:
+          dependency.description
+            ?.trim() || null,
+      });
+
+      continue;
+    }
+
+    /*
+     * =============================================
+     * APPROVAL DEPENDENCY
+     * =============================================
+     */
+
+    if (
+      dependency.type ===
+      DEPENDENCY_TYPES.APPROVAL
+    ) {
+      if (
+        !dependency.approvalType
+          ?.trim()
+      ) {
+        throw AppError.badRequest(
+          `approvalType is required for approval dependency at index ${index}.`
+        );
+      }
+
+      const normalizedApprovalType =
+        dependency.approvalType
+          .trim()
+          .toLowerCase();
+
+      const dependencyKey =
+        `approval:${normalizedApprovalType}`;
+
+      if (
+        seenDependencies.has(
+          dependencyKey
+        )
+      ) {
+        throw AppError.badRequest(
+          "Duplicate approval dependency detected."
+        );
+      }
+
+      seenDependencies.add(
+        dependencyKey
+      );
+
+      normalizedDependencies.push({
+        type:
+          DEPENDENCY_TYPES.APPROVAL,
+
+        taskId:
+          null,
+
+        resourceRequirement:
+          null,
+
+        approvalType:
+          normalizedApprovalType,
+
+        description:
+          dependency.description
+            ?.trim() || null,
+      });
+    }
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Validate ResourceRequirements in ONE database query
+   * ---------------------------------------------------
+   *
+   * Important:
+   *
+   * Requirement must:
+   * 1. exist
+   * 2. belong to THIS Initiative
+   */
+
+  if (
+    resourceRequirementIds.length > 0
+  ) {
+    const uniqueIds = [
+      ...new Set(
+        resourceRequirementIds
+      ),
+    ];
+
+    const matchingRequirements =
+      await ResourceRequirement.countDocuments(
+        {
+          _id: {
+            $in: uniqueIds,
+          },
+
+          initiative:
+            initiative._id,
+        }
+      );
+
+    if (
+      matchingRequirements !==
+      uniqueIds.length
+    ) {
+      throw AppError.badRequest(
+        "One or more resource dependencies do not belong to this initiative."
+      );
+    }
+  }
+
+  return normalizedDependencies;
+};
+const ensureNoCircularTaskDependency = ({
+  initiative,
+  taskId,
+  dependencies,
+}) => {
+  const targetTaskId =
+    taskId.toString();
+
+  /*
+   * Build dependency graph:
+   *
+   * taskId -> [task dependencies]
+   */
+  const graph = new Map();
+
+  for (const task of initiative.tasks) {
+    const id =
+      task._id.toString();
+
+    const taskDependencies =
+      id === targetTaskId
+        ? dependencies
+        : task.dependencies;
+
+    const dependentTaskIds =
+      taskDependencies
+        ?.filter(
+          (dependency) =>
+            dependency.type ===
+              DEPENDENCY_TYPES.TASK &&
+            dependency.taskId
+        )
+        .map(
+          (dependency) =>
+            dependency.taskId.toString()
+        ) ?? [];
+
+    graph.set(
+      id,
+      dependentTaskIds
+    );
+  }
+
+  /*
+   * For a new task.
+   */
+  if (!graph.has(targetTaskId)) {
+    graph.set(
+      targetTaskId,
+
+      dependencies
+        .filter(
+          (dependency) =>
+            dependency.type ===
+              DEPENDENCY_TYPES.TASK &&
+            dependency.taskId
+        )
+        .map(
+          (dependency) =>
+            dependency.taskId.toString()
+        )
+    );
+  }
+
+  const visiting = new Set();
+  const visited = new Set();
+
+  const hasCycle = (id) => {
+    if (visiting.has(id)) {
+      return true;
+    }
+
+    if (visited.has(id)) {
+      return false;
+    }
+
+    visiting.add(id);
+
+    const neighbors =
+      graph.get(id) ?? [];
+
+    for (const neighbor of neighbors) {
+      /*
+       * Ignore IDs that aren't tasks in the graph.
+       * They should already have been rejected by
+       * validateTaskDependencies anyway.
+       */
+      if (
+        graph.has(neighbor) &&
+        hasCycle(neighbor)
+      ) {
+        return true;
+      }
+    }
+
+    visiting.delete(id);
+    visited.add(id);
+
+    return false;
+  };
+
+  if (hasCycle(targetTaskId)) {
+    throw AppError.conflict(
+      "This dependency would create a circular task dependency."
+    );
+  }
+};
 
 const getOrganization = async (
   organizationId,
@@ -747,9 +1173,10 @@ export const submitInitiativeService = async ({
     "initiativeId"
   );
 
-  const initiative = await Initiative.findById(
-    initiativeId
-  );
+  const initiative =
+    await Initiative.findById(
+      initiativeId
+    );
 
   if (!initiative) {
     throw AppError.notFound(
@@ -758,27 +1185,42 @@ export const submitInitiativeService = async ({
   }
 
   /*
-   * Only a draft initiative can be submitted.
+   * ---------------------------------------------------
+   * Allowed submission states
+   * ---------------------------------------------------
+   *
+   * First submission:
+   * DRAFT -> SUBMITTED
+   *
+   * Resubmission:
+   * CHANGES_REQUESTED -> SUBMITTED
    */
+
+  const allowedStatuses = [
+    INITIATIVE_STATUSES.DRAFT,
+    INITIATIVE_STATUSES.CHANGES_REQUESTED,
+  ];
+
   if (
-    initiative.status !==
-    INITIATIVE_STATUSES.DRAFT
+    !allowedStatuses.includes(
+      initiative.status
+    )
   ) {
     throw AppError.badRequest(
-      "Only draft initiatives can be submitted."
+      "Only draft initiatives or initiatives with requested changes can be submitted."
     );
   }
 
   /*
-   * -----------------------------------------
+   * ---------------------------------------------------
    * Authorization
-   * -----------------------------------------
+   * ---------------------------------------------------
    */
 
   let canSubmit = false;
 
   /*
-   * Municipality owner/admin
+   * Municipality OWNER / ADMIN
    */
   if (
     authenticatedUser.accountType ===
@@ -792,14 +1234,16 @@ export const submitInitiativeService = async ({
           [
             USER_ROLES_IN_ORGANIZATION.OWNER,
             USER_ROLES_IN_ORGANIZATION.ADMIN,
-          ].includes(membership.role) &&
+          ].includes(
+            membership.role
+          ) &&
           membership.organizationId.toString() ===
             initiative.municipality.toString()
       ) ?? false;
   }
 
   /*
-   * Lead Community Organization owner/admin
+   * Lead Community Organization OWNER / ADMIN
    */
   if (
     authenticatedUser.accountType ===
@@ -813,7 +1257,9 @@ export const submitInitiativeService = async ({
           [
             USER_ROLES_IN_ORGANIZATION.OWNER,
             USER_ROLES_IN_ORGANIZATION.ADMIN,
-          ].includes(membership.role) &&
+          ].includes(
+            membership.role
+          ) &&
           membership.organizationId.toString() ===
             initiative.leadOrganization.toString()
       ) ?? false;
@@ -826,9 +1272,9 @@ export const submitInitiativeService = async ({
   }
 
   /*
-   * -----------------------------------------
-   * Validate required submission data
-   * -----------------------------------------
+   * ---------------------------------------------------
+   * Validate required Initiative information
+   * ---------------------------------------------------
    */
 
   if (
@@ -838,8 +1284,10 @@ export const submitInitiativeService = async ({
     !initiative.municipality ||
     !initiative.leadOrganization ||
     !initiative.expectedOutcome ||
-    !initiative.executionPeriod?.plannedStartAt ||
-    !initiative.executionPeriod?.plannedEndAt
+    !initiative.executionPeriod
+      ?.plannedStartAt ||
+    !initiative.executionPeriod
+      ?.plannedEndAt
   ) {
     throw AppError.badRequest(
       "The initiative is incomplete and cannot be submitted."
@@ -847,15 +1295,46 @@ export const submitInitiativeService = async ({
   }
 
   /*
-   * -----------------------------------------
-   * Submit
-   * -----------------------------------------
+   * ---------------------------------------------------
+   * Submission
+   * ---------------------------------------------------
    */
 
   initiative.status =
     INITIATIVE_STATUSES.SUBMITTED;
 
-  initiative.submittedAt = new Date();
+  initiative.submittedAt =
+    new Date();
+
+  /*
+   * When resubmitting after requested changes,
+   * the old municipality decision should no longer
+   * represent the current review state.
+   *
+   * Keep revisionNumber because the next municipality
+   * review will increment it.
+   */
+  initiative.approval.decision =
+    "pending";
+
+  initiative.approval.reviewedBy =
+    null;
+
+  initiative.approval.notes =
+    null;
+
+  initiative.approval.reviewedAt =
+    null;
+
+  /*
+   * Approval/readiness must remain false until
+   * the Municipality approves this submission.
+   */
+  initiative.readiness
+    .municipalityApproved = false;
+
+  initiative.readiness.calculatedAt =
+    new Date();
 
   await initiative.save();
 
@@ -1265,22 +1744,39 @@ export const addTaskService = async ({
   payload,
   authenticatedUser,
 }) => {
-  ensureValidObjectId(initiativeId, "initiativeId");
+  ensureValidObjectId(
+    initiativeId,
+    "initiativeId"
+  );
 
-  const initiative = await Initiative.findById(initiativeId);
+  const initiative =
+    await Initiative.findById(
+      initiativeId
+    );
 
   if (!initiative) {
-    throw AppError.notFound("Initiative not found.");
+    throw AppError.notFound(
+      "Initiative not found."
+    );
   }
+
+  /*
+   * ---------------------------------------------------
+   * Authorization
+   * ---------------------------------------------------
+   */
 
   const canManage =
     authenticatedUser.memberships?.some(
       (membership) =>
-        membership.status === ACCOUNT_STATUSES.ACTIVE &&
+        membership.status ===
+          ACCOUNT_STATUSES.ACTIVE &&
         [
           USER_ROLES_IN_ORGANIZATION.OWNER,
           USER_ROLES_IN_ORGANIZATION.ADMIN,
-        ].includes(membership.role) &&
+        ].includes(
+          membership.role
+        ) &&
         [
           initiative.municipality.toString(),
           initiative.leadOrganization.toString(),
@@ -1308,6 +1804,12 @@ export const addTaskService = async ({
     scheduledEndAt = null,
   } = payload;
 
+  /*
+   * ---------------------------------------------------
+   * Basic fields
+   * ---------------------------------------------------
+   */
+
   if (!title?.trim()) {
     throw AppError.badRequest(
       "Task title is required."
@@ -1326,9 +1828,15 @@ export const addTaskService = async ({
     );
   }
 
-  ensureValidObjectId(phaseId, "phaseId");
+  ensureValidObjectId(
+    phaseId,
+    "phaseId"
+  );
 
-  const phase = initiative.phases.id(phaseId);
+  const phase =
+    initiative.phases.id(
+      phaseId
+    );
 
   if (!phase) {
     throw AppError.badRequest(
@@ -1336,18 +1844,28 @@ export const addTaskService = async ({
     );
   }
 
-  if (!order || order < 1) {
+  const normalizedOrder =
+    Number(order);
+
+  if (
+    !Number.isInteger(
+      normalizedOrder
+    ) ||
+    normalizedOrder < 1
+  ) {
     throw AppError.badRequest(
-      "Task order must be at least 1."
+      "Task order must be an integer of at least 1."
     );
   }
 
-  const duplicateOrder = initiative.tasks.some(
-    (task) =>
-      task.phaseId.toString() ===
-        phaseId.toString() &&
-      task.order === order
-  );
+  const duplicateOrder =
+    initiative.tasks.some(
+      (task) =>
+        task.phaseId.toString() ===
+          phaseId.toString() &&
+        task.order ===
+          normalizedOrder
+    );
 
   if (duplicateOrder) {
     throw AppError.badRequest(
@@ -1355,16 +1873,63 @@ export const addTaskService = async ({
     );
   }
 
+  /*
+   * ---------------------------------------------------
+   * Dates
+   * ---------------------------------------------------
+   */
+
+  const parsedStartAt =
+    scheduledStartAt
+      ? new Date(
+          scheduledStartAt
+        )
+      : null;
+
+  const parsedEndAt =
+    scheduledEndAt
+      ? new Date(
+          scheduledEndAt
+        )
+      : null;
+
   if (
-    scheduledStartAt &&
-    scheduledEndAt &&
-    new Date(scheduledEndAt) <=
-      new Date(scheduledStartAt)
+    parsedStartAt &&
+    Number.isNaN(
+      parsedStartAt.getTime()
+    )
+  ) {
+    throw AppError.badRequest(
+      "scheduledStartAt is invalid."
+    );
+  }
+
+  if (
+    parsedEndAt &&
+    Number.isNaN(
+      parsedEndAt.getTime()
+    )
+  ) {
+    throw AppError.badRequest(
+      "scheduledEndAt is invalid."
+    );
+  }
+
+  if (
+    parsedStartAt &&
+    parsedEndAt &&
+    parsedEndAt <= parsedStartAt
   ) {
     throw AppError.badRequest(
       "Task end date must be after start date."
     );
   }
+
+  /*
+   * ---------------------------------------------------
+   * Assigned Organization
+   * ---------------------------------------------------
+   */
 
   if (assignedOrganization) {
     ensureValidObjectId(
@@ -1373,24 +1938,76 @@ export const addTaskService = async ({
     );
   }
 
+  /*
+   * ---------------------------------------------------
+   * Dependency validation
+   * ---------------------------------------------------
+   */
+
+  const normalizedDependencies =
+    await validateTaskDependencies({
+      dependencies,
+      initiative,
+    });
+
+  /*
+   * Pre-generate embedded Task ID.
+   */
+  const taskId =
+    new mongoose.Types.ObjectId();
+
+  ensureNoCircularTaskDependency({
+    initiative,
+    taskId,
+    dependencies:
+      normalizedDependencies,
+  });
+
+  /*
+   * ---------------------------------------------------
+   * Create embedded task
+   * ---------------------------------------------------
+   */
+
   initiative.tasks.push({
-    title: title.trim(),
-    description: description.trim(),
+    _id: taskId,
+
+    title:
+      title.trim(),
+
+    description:
+      description.trim(),
+
     phaseId,
-    order,
-    dependencies,
+
+    order:
+      normalizedOrder,
+
+    dependencies:
+      normalizedDependencies,
+
     assignedOrganization,
-    requiredSkills,
-    volunteerSlots,
-    scheduledStartAt,
-    scheduledEndAt,
+
+    requiredSkills:
+      Array.isArray(requiredSkills)
+        ? requiredSkills
+        : [],
+
+    volunteerSlots:
+      Number(volunteerSlots),
+
+    scheduledStartAt:
+      parsedStartAt,
+
+    scheduledEndAt:
+      parsedEndAt,
   });
 
   await initiative.save();
 
-  return initiative.tasks[
-    initiative.tasks.length - 1
-  ];
+  return initiative.tasks.id(
+    taskId
+  );
 };
 export const getTaskByIdService = async ({
   initiativeId,
@@ -1422,25 +2039,44 @@ export const updateTaskService = async ({
   payload,
   authenticatedUser,
 }) => {
-  ensureValidObjectId(initiativeId, "initiativeId");
-  ensureValidObjectId(taskId, "taskId");
-
-  const initiative = await Initiative.findById(
-    initiativeId
+  ensureValidObjectId(
+    initiativeId,
+    "initiativeId"
   );
 
+  ensureValidObjectId(
+    taskId,
+    "taskId"
+  );
+
+  const initiative =
+    await Initiative.findById(
+      initiativeId
+    );
+
   if (!initiative) {
-    throw AppError.notFound("Initiative not found.");
+    throw AppError.notFound(
+      "Initiative not found."
+    );
   }
+
+  /*
+   * ---------------------------------------------------
+   * Authorization
+   * ---------------------------------------------------
+   */
 
   const canManage =
     authenticatedUser.memberships?.some(
       (membership) =>
-        membership.status === ACCOUNT_STATUSES.ACTIVE &&
+        membership.status ===
+          ACCOUNT_STATUSES.ACTIVE &&
         [
           USER_ROLES_IN_ORGANIZATION.OWNER,
           USER_ROLES_IN_ORGANIZATION.ADMIN,
-        ].includes(membership.role) &&
+        ].includes(
+          membership.role
+        ) &&
         [
           initiative.municipality.toString(),
           initiative.leadOrganization.toString(),
@@ -1455,10 +2091,15 @@ export const updateTaskService = async ({
     );
   }
 
-  const task = initiative.tasks.id(taskId);
+  const task =
+    initiative.tasks.id(
+      taskId
+    );
 
   if (!task) {
-    throw AppError.notFound("Task not found.");
+    throw AppError.notFound(
+      "Task not found."
+    );
   }
 
   const allowedFields = [
@@ -1478,11 +2119,29 @@ export const updateTaskService = async ({
     "lockReasons",
   ];
 
-  for (const field of allowedFields) {
-    if (payload[field] !== undefined) {
-      task[field] = payload[field];
-    }
+  const hasValidField =
+    allowedFields.some(
+      (field) =>
+        payload[field] !==
+        undefined
+    );
+
+  if (!hasValidField) {
+    throw AppError.badRequest(
+      "No valid task fields were provided."
+    );
   }
+
+  /*
+   * ---------------------------------------------------
+   * Phase
+   * ---------------------------------------------------
+   */
+
+  const targetPhaseId =
+    payload.phaseId !== undefined
+      ? payload.phaseId
+      : task.phaseId;
 
   if (
     payload.phaseId !== undefined
@@ -1492,38 +2151,337 @@ export const updateTaskService = async ({
       "phaseId"
     );
 
-    const phase = initiative.phases.id(
-      payload.phaseId
-    );
+    const phase =
+      initiative.phases.id(
+        payload.phaseId
+      );
 
     if (!phase) {
       throw AppError.badRequest(
-        "The selected phase does not exist."
+        "The selected phase does not exist in this initiative."
       );
     }
   }
 
-  if (
+  /*
+   * ---------------------------------------------------
+   * Order
+   * ---------------------------------------------------
+   */
+
+  const targetOrder =
     payload.order !== undefined
+      ? Number(payload.order)
+      : task.order;
+
+  if (
+    !Number.isInteger(
+      targetOrder
+    ) ||
+    targetOrder < 1
   ) {
-    const targetPhaseId =
-      payload.phaseId ?? task.phaseId;
+    throw AppError.badRequest(
+      "Task order must be an integer of at least 1."
+    );
+  }
 
-    const duplicateOrder =
-      initiative.tasks.some(
-        (otherTask) =>
-          otherTask._id.toString() !==
-            taskId.toString() &&
-          otherTask.phaseId.toString() ===
-            targetPhaseId.toString() &&
-          otherTask.order === payload.order
-      );
+  const duplicateOrder =
+    initiative.tasks.some(
+      (otherTask) =>
+        otherTask._id.toString() !==
+          taskId.toString() &&
+        otherTask.phaseId.toString() ===
+          targetPhaseId.toString() &&
+        otherTask.order ===
+          targetOrder
+    );
 
-    if (duplicateOrder) {
+  if (duplicateOrder) {
+    throw AppError.badRequest(
+      "Another task in this phase already uses this order."
+    );
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Dependencies
+   * ---------------------------------------------------
+   */
+
+  let normalizedDependencies =
+    task.dependencies;
+
+  if (
+    payload.dependencies !==
+    undefined
+  ) {
+    normalizedDependencies =
+      await validateTaskDependencies({
+        dependencies:
+          payload.dependencies,
+
+        initiative,
+
+        currentTaskId:
+          task._id,
+      });
+
+    ensureNoCircularTaskDependency({
+      initiative,
+
+      taskId:
+        task._id,
+
+      dependencies:
+        normalizedDependencies,
+    });
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Dates
+   * ---------------------------------------------------
+   */
+
+  const scheduledStartAt =
+    payload.scheduledStartAt !==
+    undefined
+      ? payload.scheduledStartAt
+        ? new Date(
+            payload.scheduledStartAt
+          )
+        : null
+      : task.scheduledStartAt;
+
+  const scheduledEndAt =
+    payload.scheduledEndAt !==
+    undefined
+      ? payload.scheduledEndAt
+        ? new Date(
+            payload.scheduledEndAt
+          )
+        : null
+      : task.scheduledEndAt;
+
+  if (
+    scheduledStartAt &&
+    Number.isNaN(
+      scheduledStartAt.getTime()
+    )
+  ) {
+    throw AppError.badRequest(
+      "scheduledStartAt is invalid."
+    );
+  }
+
+  if (
+    scheduledEndAt &&
+    Number.isNaN(
+      scheduledEndAt.getTime()
+    )
+  ) {
+    throw AppError.badRequest(
+      "scheduledEndAt is invalid."
+    );
+  }
+
+  if (
+    scheduledStartAt &&
+    scheduledEndAt &&
+    scheduledEndAt <=
+      scheduledStartAt
+  ) {
+    throw AppError.badRequest(
+      "Task end date must be after start date."
+    );
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Validate basic editable fields
+   * ---------------------------------------------------
+   */
+
+  if (
+    payload.title !== undefined &&
+    !payload.title?.trim()
+  ) {
+    throw AppError.badRequest(
+      "Task title cannot be empty."
+    );
+  }
+
+  if (
+    payload.description !==
+      undefined &&
+    !payload.description?.trim()
+  ) {
+    throw AppError.badRequest(
+      "Task description cannot be empty."
+    );
+  }
+
+  if (
+    payload.assignedOrganization
+  ) {
+    ensureValidObjectId(
+      payload.assignedOrganization,
+      "assignedOrganization"
+    );
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Apply fields AFTER validation
+   * ---------------------------------------------------
+   */
+
+  if (
+    payload.title !== undefined
+  ) {
+    task.title =
+      payload.title.trim();
+  }
+
+  if (
+    payload.description !==
+    undefined
+  ) {
+    task.description =
+      payload.description.trim();
+  }
+
+  task.phaseId =
+    targetPhaseId;
+
+  task.order =
+    targetOrder;
+
+  if (
+    payload.dependencies !==
+    undefined
+  ) {
+    task.dependencies =
+      normalizedDependencies;
+  }
+
+  if (
+    payload.assignedOrganization !==
+    undefined
+  ) {
+    task.assignedOrganization =
+      payload.assignedOrganization ||
+      null;
+  }
+
+  if (
+    payload.requiredSkills !==
+    undefined
+  ) {
+    if (
+      !Array.isArray(
+        payload.requiredSkills
+      )
+    ) {
       throw AppError.badRequest(
-        "Another task in this phase already uses this order."
+        "requiredSkills must be an array."
       );
     }
+
+    task.requiredSkills =
+      payload.requiredSkills;
+  }
+
+  if (
+    payload.volunteerSlots !==
+    undefined
+  ) {
+    const volunteerSlots =
+      Number(
+        payload.volunteerSlots
+      );
+
+    if (
+      !Number.isInteger(
+        volunteerSlots
+      ) ||
+      volunteerSlots < 0
+    ) {
+      throw AppError.badRequest(
+        "volunteerSlots must be a non-negative integer."
+      );
+    }
+
+    task.volunteerSlots =
+      volunteerSlots;
+  }
+
+  if (
+    payload.scheduledStartAt !==
+    undefined
+  ) {
+    task.scheduledStartAt =
+      scheduledStartAt;
+  }
+
+  if (
+    payload.scheduledEndAt !==
+    undefined
+  ) {
+    task.scheduledEndAt =
+      scheduledEndAt;
+  }
+
+  if (
+    payload.status !== undefined
+  ) {
+    task.status =
+      payload.status;
+  }
+
+  if (
+    payload.progress !== undefined
+  ) {
+    const progress =
+      Number(payload.progress);
+
+    if (
+      !Number.isFinite(progress) ||
+      progress < 0 ||
+      progress > 100
+    ) {
+      throw AppError.badRequest(
+        "Task progress must be between 0 and 100."
+      );
+    }
+
+    task.progress =
+      progress;
+  }
+
+  if (
+    payload.isLocked !== undefined
+  ) {
+    task.isLocked =
+      Boolean(payload.isLocked);
+  }
+
+  if (
+    payload.lockReasons !==
+    undefined
+  ) {
+    if (
+      !Array.isArray(
+        payload.lockReasons
+      )
+    ) {
+      throw AppError.badRequest(
+        "lockReasons must be an array."
+      );
+    }
+
+    task.lockReasons =
+      payload.lockReasons;
   }
 
   await initiative.save();
@@ -1599,168 +2557,368 @@ export const deleteTaskService = async ({
     deletedTaskId: taskId,
   };
 };
-export const addResourceRequirementService = async ({
-  initiativeId,
-  payload,
-  authenticatedUser,
-}) => {
-  ensureValidObjectId(initiativeId, "initiativeId");
-
-  const initiative = await Initiative.findById(initiativeId);
-
-  if (!initiative) {
-    throw AppError.notFound("Initiative not found.");
-  }
-
-  const canManage =
-    authenticatedUser.memberships?.some(
-      (membership) =>
-        membership.status === ACCOUNT_STATUSES.ACTIVE &&
-        [
-          USER_ROLES_IN_ORGANIZATION.OWNER,
-          USER_ROLES_IN_ORGANIZATION.ADMIN,
-        ].includes(membership.role) &&
-        [
-          initiative.municipality.toString(),
-          initiative.leadOrganization.toString(),
-        ].includes(
-          membership.organizationId.toString()
-        )
-    ) ?? false;
-
-  if (!canManage) {
-    throw AppError.forbidden(
-      "You are not authorized to manage resource requirements for this initiative."
+export const addResourceRequirementService =
+  async ({
+    initiativeId,
+    payload,
+    authenticatedUser,
+  }) => {
+    ensureValidObjectId(
+      initiativeId,
+      "initiativeId"
     );
-  }
 
-  const {
-    category,
-    name,
-    description,
-    quantityRequired,
-    unit,
-    estimatedCost = null,
-    requiredFrom = null,
-    requiredUntil = null,
-    serviceArea = null,
-  } = payload;
+    const initiative =
+      await Initiative.findById(
+        initiativeId
+      );
 
-  if (!category?.trim()) {
-    throw AppError.badRequest(
-      "Resource requirement category is required."
+    if (!initiative) {
+      throw AppError.notFound(
+        "Initiative not found."
+      );
+    }
+
+    const canManage =
+      authenticatedUser.memberships?.some(
+        (membership) =>
+          membership.status ===
+            ACCOUNT_STATUSES.ACTIVE &&
+          [
+            USER_ROLES_IN_ORGANIZATION.OWNER,
+            USER_ROLES_IN_ORGANIZATION.ADMIN,
+          ].includes(
+            membership.role
+          ) &&
+          [
+            initiative.municipality.toString(),
+            initiative.leadOrganization.toString(),
+          ].includes(
+            membership.organizationId.toString()
+          )
+      ) ?? false;
+
+    if (!canManage) {
+      throw AppError.forbidden(
+        "You are not authorized to manage resource requirements for this initiative."
+      );
+    }
+
+    const {
+      category,
+      name,
+      description,
+      quantityRequired,
+      unit,
+      estimatedCost = null,
+      currency = "USD",
+      requiredFrom = null,
+      requiredUntil = null,
+      serviceArea = null,
+    } = payload;
+
+    /*
+     * Required fields
+     */
+
+    if (!category?.trim()) {
+      throw AppError.badRequest(
+        "Resource requirement category is required."
+      );
+    }
+
+    if (!name?.trim()) {
+      throw AppError.badRequest(
+        "Resource requirement name is required."
+      );
+    }
+
+    const requiredQuantity =
+      Number(quantityRequired);
+
+    if (
+      !Number.isFinite(
+        requiredQuantity
+      ) ||
+      requiredQuantity <= 0
+    ) {
+      throw AppError.badRequest(
+        "quantityRequired must be greater than 0."
+      );
+    }
+
+    if (!unit?.trim()) {
+      throw AppError.badRequest(
+        "Resource requirement unit is required."
+      );
+    }
+
+    /*
+     * Estimated cost
+     */
+
+    if (
+      estimatedCost !== null &&
+      (
+        !Number.isFinite(
+          Number(estimatedCost)
+        ) ||
+        Number(estimatedCost) < 0
+      )
+    ) {
+      throw AppError.badRequest(
+        "estimatedCost cannot be negative."
+      );
+    }
+
+    /*
+     * Currency
+     */
+
+    const normalizedCurrency =
+      currency
+        ?.trim()
+        .toUpperCase();
+
+    if (
+      !normalizedCurrency ||
+      normalizedCurrency.length !== 3
+    ) {
+      throw AppError.badRequest(
+        "currency must be a 3-letter currency code."
+      );
+    }
+
+    /*
+     * Dates
+     */
+
+    const from =
+      requiredFrom
+        ? new Date(requiredFrom)
+        : null;
+
+    const until =
+      requiredUntil
+        ? new Date(requiredUntil)
+        : null;
+
+    if (
+      from &&
+      Number.isNaN(from.getTime())
+    ) {
+      throw AppError.badRequest(
+        "requiredFrom is invalid."
+      );
+    }
+
+    if (
+      until &&
+      Number.isNaN(until.getTime())
+    ) {
+      throw AppError.badRequest(
+        "requiredUntil is invalid."
+      );
+    }
+
+    if (
+      from &&
+      until &&
+      until <= from
+    ) {
+      throw AppError.badRequest(
+        "requiredUntil must be after requiredFrom."
+      );
+    }
+
+    /*
+     * ResourceRequirements belonging to an approved
+     * initiative may already be municipality verified.
+     *
+     * If you only want requirements created BEFORE
+     * approval, always use false instead.
+     */
+    const isVerifiedRequest =
+      initiative.status ===
+        INITIATIVE_STATUSES.APPROVED ||
+      initiative.status ===
+        INITIATIVE_STATUSES.IN_PROGRESS;
+
+    return ResourceRequirement.create({
+      initiative:
+        initiative._id,
+
+      category:
+        category.trim(),
+
+      name:
+        name.trim(),
+
+      description:
+        description?.trim() ||
+        null,
+
+      quantityRequired:
+        requiredQuantity,
+
+      quantityReserved: 0,
+
+      unit:
+        unit.trim(),
+
+      estimatedCost:
+        estimatedCost !== null
+          ? Number(
+              estimatedCost
+            )
+          : null,
+
+      currency:
+        normalizedCurrency,
+
+      requiredFrom:
+        from,
+
+      requiredUntil:
+        until,
+
+      serviceArea:
+        serviceArea?.trim() ||
+        null,
+
+      status:
+        "unmet",
+
+      isVerifiedRequest,
+    });
+  };
+export const getResourceRequirementByIdService =
+  async ({
+    initiativeId,
+    requirementId,
+  }) => {
+    ensureValidObjectId(
+      initiativeId,
+      "initiativeId"
     );
-  }
 
-  if (!name?.trim()) {
-    throw AppError.badRequest(
-      "Resource requirement name is required."
+    ensureValidObjectId(
+      requirementId,
+      "requirementId"
     );
-  }
 
-  if (
-    quantityRequired === undefined ||
-    Number(quantityRequired) <= 0
-  ) {
-    throw AppError.badRequest(
-      "quantityRequired must be greater than 0."
-    );
-  }
+    const initiativeExists =
+      await Initiative.exists({
+        _id: initiativeId,
+      });
 
-  if (!unit?.trim()) {
-    throw AppError.badRequest(
-      "Resource requirement unit is required."
-    );
-  }
+    if (!initiativeExists) {
+      throw AppError.notFound(
+        "Initiative not found."
+      );
+    }
 
-  if (
-    requiredFrom &&
-    requiredUntil &&
-    new Date(requiredUntil) <= new Date(requiredFrom)
-  ) {
-    throw AppError.badRequest(
-      "requiredUntil must be after requiredFrom."
-    );
-  }
+    const requirement =
+      await ResourceRequirement.findOne({
+        _id:
+          requirementId,
 
-  initiative.resourceRequirements.push({
-    category: category.trim(),
-    name: name.trim(),
-    description: description?.trim() || undefined,
-    quantityRequired,
-    quantityReserved: 0,
-    unit: unit.trim(),
-    estimatedCost,
-    requiredFrom:
-      requiredFrom ? new Date(requiredFrom) : undefined,
-    requiredUntil:
-      requiredUntil ? new Date(requiredUntil) : undefined,
-    serviceArea:
-      serviceArea?.trim() || undefined,
-    status: "unmet",
-    isVerifiedRequest: false,
-  });
+        initiative:
+          initiativeId,
+      });
 
-  await initiative.save();
+    if (!requirement) {
+      throw AppError.notFound(
+        "Resource requirement not found."
+      );
+    }
 
-  return initiative.resourceRequirements[
-    initiative.resourceRequirements.length - 1
-  ];
-};
-export const getResourceRequirementByIdService = async ({
-  initiativeId,
-  requirementId,
-}) => {
-  ensureValidObjectId(initiativeId, "initiativeId");
-  ensureValidObjectId(requirementId, "requirementId");
-
-  const initiative = await Initiative.findById(initiativeId);
-
-  if (!initiative) {
-    throw AppError.notFound("Initiative not found.");
-  }
-
-  const requirement =
-    initiative.resourceRequirements.id(requirementId);
-
-  if (!requirement) {
-    throw AppError.notFound(
-      "Resource requirement not found."
-    );
-  }
-
-  return requirement;
-};
+    return requirement;
+  };
 export const updateResourceRequirementService = async ({
   initiativeId,
   requirementId,
   payload,
   authenticatedUser,
 }) => {
-  ensureValidObjectId(initiativeId, "initiativeId");
-  ensureValidObjectId(requirementId, "requirementId");
+  ensureValidObjectId(
+    initiativeId,
+    "initiativeId"
+  );
 
-  const initiative = await Initiative.findById(initiativeId);
+  ensureValidObjectId(
+    requirementId,
+    "requirementId"
+  );
+
+  /*
+   * ---------------------------------------------------
+   * Find Initiative
+   * ---------------------------------------------------
+   */
+
+  const initiative =
+    await Initiative.findById(
+      initiativeId
+    );
 
   if (!initiative) {
-    throw AppError.notFound("Initiative not found.");
+    throw AppError.notFound(
+      "Initiative not found."
+    );
   }
 
-  const canManage =
-    authenticatedUser.memberships?.some(
-      (membership) =>
-        membership.status === ACCOUNT_STATUSES.ACTIVE &&
-        [
-          USER_ROLES_IN_ORGANIZATION.OWNER,
-          USER_ROLES_IN_ORGANIZATION.ADMIN,
-        ].includes(membership.role) &&
-        [
-          initiative.municipality.toString(),
-          initiative.leadOrganization.toString(),
-        ].includes(
-          membership.organizationId.toString()
-        )
-    ) ?? false;
+  /*
+   * ---------------------------------------------------
+   * Authorization
+   *
+   * Municipality OWNER / ADMIN
+   * OR
+   * Lead Community Organization OWNER / ADMIN
+   * ---------------------------------------------------
+   */
+
+  let canManage = false;
+
+  if (
+    authenticatedUser.accountType ===
+    USER_ROLES.MUNICIPALITY
+  ) {
+    canManage =
+      authenticatedUser.memberships?.some(
+        (membership) =>
+          membership.status ===
+            ACCOUNT_STATUSES.ACTIVE &&
+          [
+            USER_ROLES_IN_ORGANIZATION.OWNER,
+            USER_ROLES_IN_ORGANIZATION.ADMIN,
+          ].includes(
+            membership.role
+          ) &&
+          membership.organizationId.toString() ===
+            initiative.municipality.toString()
+      ) ?? false;
+  }
+
+  if (
+    authenticatedUser.accountType ===
+    USER_ROLES.COMMUNITY_ORGANIZATION
+  ) {
+    canManage =
+      authenticatedUser.memberships?.some(
+        (membership) =>
+          membership.status ===
+            ACCOUNT_STATUSES.ACTIVE &&
+          [
+            USER_ROLES_IN_ORGANIZATION.OWNER,
+            USER_ROLES_IN_ORGANIZATION.ADMIN,
+          ].includes(
+            membership.role
+          ) &&
+          membership.organizationId.toString() ===
+            initiative.leadOrganization.toString()
+      ) ?? false;
+  }
 
   if (!canManage) {
     throw AppError.forbidden(
@@ -1768,14 +2926,42 @@ export const updateResourceRequirementService = async ({
     );
   }
 
+  /*
+   * ---------------------------------------------------
+   * Find standalone ResourceRequirement
+   *
+   * IMPORTANT:
+   * Also verify that it belongs to this Initiative.
+   * ---------------------------------------------------
+   */
+
   const requirement =
-    initiative.resourceRequirements.id(requirementId);
+    await ResourceRequirement.findOne({
+      _id: requirementId,
+      initiative: initiative._id,
+    });
 
   if (!requirement) {
     throw AppError.notFound(
       "Resource requirement not found."
     );
   }
+
+  /*
+   * ---------------------------------------------------
+   * User-editable fields only
+   *
+   * DO NOT expose:
+   *
+   * quantityReserved
+   * status
+   * isVerifiedRequest
+   * reopenedAt
+   * initiative
+   *
+   * Those are workflow-controlled.
+   * ---------------------------------------------------
+   */
 
   const allowedFields = [
     "category",
@@ -1784,41 +2970,253 @@ export const updateResourceRequirementService = async ({
     "quantityRequired",
     "unit",
     "estimatedCost",
+    "currency",
     "requiredFrom",
     "requiredUntil",
     "serviceArea",
-    "status",
-    "isVerifiedRequest",
   ];
 
-  for (const field of allowedFields) {
-    if (payload[field] !== undefined) {
-      requirement[field] = payload[field];
+  const hasValidField =
+    allowedFields.some(
+      (field) =>
+        payload[field] !== undefined
+    );
+
+  if (!hasValidField) {
+    throw AppError.badRequest(
+      "No valid resource requirement fields were provided."
+    );
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Category
+   * ---------------------------------------------------
+   */
+
+  if (
+    payload.category !== undefined
+  ) {
+    if (!payload.category?.trim()) {
+      throw AppError.badRequest(
+        "Category cannot be empty."
+      );
+    }
+
+    requirement.category =
+      payload.category.trim();
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Name
+   * ---------------------------------------------------
+   */
+
+  if (
+    payload.name !== undefined
+  ) {
+    if (!payload.name?.trim()) {
+      throw AppError.badRequest(
+        "Name cannot be empty."
+      );
+    }
+
+    requirement.name =
+      payload.name.trim();
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Description
+   * ---------------------------------------------------
+   */
+
+  if (
+    payload.description !== undefined
+  ) {
+    requirement.description =
+      payload.description?.trim() ||
+      null;
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Quantity Required
+   * ---------------------------------------------------
+   */
+
+  if (
+    payload.quantityRequired !==
+    undefined
+  ) {
+    const quantityRequired =
+      Number(
+        payload.quantityRequired
+      );
+
+    if (
+      !Number.isFinite(
+        quantityRequired
+      ) ||
+      quantityRequired <= 0
+    ) {
+      throw AppError.badRequest(
+        "quantityRequired must be greater than 0."
+      );
+    }
+
+    /*
+     * Example:
+     *
+     * currently reserved = 5
+     * client tries quantityRequired = 3
+     *
+     * Not allowed because existing reservations
+     * would exceed the requirement.
+     */
+    if (
+      quantityRequired <
+      requirement.quantityReserved
+    ) {
+      throw AppError.conflict(
+        `quantityRequired cannot be lower than the currently reserved quantity (${requirement.quantityReserved}).`
+      );
+    }
+
+    requirement.quantityRequired =
+      quantityRequired;
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Unit
+   * ---------------------------------------------------
+   */
+
+  if (
+    payload.unit !== undefined
+  ) {
+    if (!payload.unit?.trim()) {
+      throw AppError.badRequest(
+        "Unit cannot be empty."
+      );
+    }
+
+    requirement.unit =
+      payload.unit.trim();
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Estimated Cost
+   * ---------------------------------------------------
+   */
+
+  if (
+    payload.estimatedCost !==
+    undefined
+  ) {
+    if (
+      payload.estimatedCost ===
+      null
+    ) {
+      requirement.estimatedCost =
+        null;
+    } else {
+      const estimatedCost =
+        Number(
+          payload.estimatedCost
+        );
+
+      if (
+        !Number.isFinite(
+          estimatedCost
+        ) ||
+        estimatedCost < 0
+      ) {
+        throw AppError.badRequest(
+          "estimatedCost cannot be negative."
+        );
+      }
+
+      requirement.estimatedCost =
+        estimatedCost;
     }
   }
 
+  /*
+   * ---------------------------------------------------
+   * Currency
+   * ---------------------------------------------------
+   */
+
   if (
-    payload.quantityRequired !== undefined &&
-    Number(payload.quantityRequired) <= 0
+    payload.currency !== undefined
   ) {
-    throw AppError.badRequest(
-      "quantityRequired must be greater than 0."
-    );
+    const currency =
+      payload.currency
+        ?.trim()
+        .toUpperCase();
+
+    if (
+      !currency ||
+      currency.length !== 3
+    ) {
+      throw AppError.badRequest(
+        "currency must be a valid 3-letter currency code."
+      );
+    }
+
+    requirement.currency =
+      currency;
   }
+
+  /*
+   * ---------------------------------------------------
+   * Dates
+   * ---------------------------------------------------
+   */
 
   const requiredFrom =
     payload.requiredFrom !== undefined
       ? payload.requiredFrom
-        ? new Date(payload.requiredFrom)
+        ? new Date(
+            payload.requiredFrom
+          )
         : null
       : requirement.requiredFrom;
 
   const requiredUntil =
     payload.requiredUntil !== undefined
       ? payload.requiredUntil
-        ? new Date(payload.requiredUntil)
+        ? new Date(
+            payload.requiredUntil
+          )
         : null
       : requirement.requiredUntil;
+
+  if (
+    requiredFrom &&
+    Number.isNaN(
+      requiredFrom.getTime()
+    )
+  ) {
+    throw AppError.badRequest(
+      "requiredFrom is invalid."
+    );
+  }
+
+  if (
+    requiredUntil &&
+    Number.isNaN(
+      requiredUntil.getTime()
+    )
+  ) {
+    throw AppError.badRequest(
+      "requiredUntil is invalid."
+    );
+  }
 
   if (
     requiredFrom &&
@@ -1830,137 +3228,66 @@ export const updateResourceRequirementService = async ({
     );
   }
 
-  requirement.requiredFrom = requiredFrom;
-  requirement.requiredUntil = requiredUntil;
+  requirement.requiredFrom =
+    requiredFrom;
 
-  await initiative.save();
+  requirement.requiredUntil =
+    requiredUntil;
+
+  /*
+   * ---------------------------------------------------
+   * Service Area
+   * ---------------------------------------------------
+   */
+
+  if (
+    payload.serviceArea !== undefined
+  ) {
+    requirement.serviceArea =
+      payload.serviceArea?.trim() ||
+      null;
+  }
+
+  /*
+   * ---------------------------------------------------
+   * Save RESOURCE REQUIREMENT
+   *
+   * NOT initiative.save()
+   * ---------------------------------------------------
+   */
+
+  await requirement.save();
 
   return requirement;
 };
-export const deleteResourceRequirementService = async ({
-  initiativeId,
-  requirementId,
-  authenticatedUser,
-}) => {
-  ensureValidObjectId(initiativeId, "initiativeId");
-  ensureValidObjectId(requirementId, "requirementId");
-
-  const initiative = await Initiative.findById(initiativeId);
-
-  if (!initiative) {
-    throw AppError.notFound("Initiative not found.");
-  }
-
-  const canManage =
-    authenticatedUser.memberships?.some(
-      (membership) =>
-        membership.status === ACCOUNT_STATUSES.ACTIVE &&
-        [
-          USER_ROLES_IN_ORGANIZATION.OWNER,
-          USER_ROLES_IN_ORGANIZATION.ADMIN,
-        ].includes(membership.role) &&
-        [
-          initiative.municipality.toString(),
-          initiative.leadOrganization.toString(),
-        ].includes(
-          membership.organizationId.toString()
-        )
-    ) ?? false;
-
-  if (!canManage) {
-    throw AppError.forbidden(
-      "You are not authorized to manage resource requirements for this initiative."
-    );
-  }
-
-  const requirement =
-    initiative.resourceRequirements.id(requirementId);
-
-  if (!requirement) {
-    throw AppError.notFound(
-      "Resource requirement not found."
-    );
-  }
-
-  const taskDependsOnRequirement =
-    initiative.tasks.some((task) =>
-      task.dependencies?.some(
-        (dependency) =>
-          dependency.type ===
-            DEPENDENCY_TYPES.RESOURCE &&
-          dependency.resourceRequirementId?.toString() ===
-            requirementId.toString()
-      )
-    );
-
-  if (taskDependsOnRequirement) {
-    throw AppError.conflict(
-      "This resource requirement cannot be deleted because one or more tasks depend on it."
-    );
-  }
-
-  if (requirement.quantityReserved > 0) {
-    throw AppError.conflict(
-      "This resource requirement cannot be deleted because resources have already been reserved for it."
-    );
-  }
-
-  requirement.deleteOne();
-
-  await initiative.save();
-
-  return {
-    deletedRequirementId: requirementId,
-  };
-};
-export const reviewInitiativeApprovalService = async ({
-  initiativeId,
-  decision,
-  notes,
-  authenticatedUser,
-}) => {
-  ensureValidObjectId(
+export const deleteResourceRequirementService =
+  async ({
     initiativeId,
-    "initiativeId"
-  );
-
-  const allowedDecisions = [
-    "approved",
-    "rejected",
-    "changes_requested",
-  ];
-
-  if (!allowedDecisions.includes(decision)) {
-    throw AppError.badRequest(
-      "Invalid initiative approval decision."
+    requirementId,
+    authenticatedUser,
+  }) => {
+    ensureValidObjectId(
+      initiativeId,
+      "initiativeId"
     );
-  }
 
-  const initiative = await Initiative.findById(
-    initiativeId
-  );
-
-  if (!initiative) {
-    throw AppError.notFound(
-      "Initiative not found."
+    ensureValidObjectId(
+      requirementId,
+      "requirementId"
     );
-  }
 
-  if (
-    initiative.status !==
-      INITIATIVE_STATUSES.SUBMITTED &&
-    initiative.status !==
-      INITIATIVE_STATUSES.CHANGES_REQUESTED
-  ) {
-    throw AppError.badRequest(
-      "Only submitted initiatives or initiatives with requested changes can be reviewed."
-    );
-  }
+    const initiative =
+      await Initiative.findById(
+        initiativeId
+      );
 
-  const canReview =
-    authenticatedUser.accountType ===
-      USER_ROLES.MUNICIPALITY &&
-    (
+    if (!initiative) {
+      throw AppError.notFound(
+        "Initiative not found."
+      );
+    }
+
+    const canManage =
       authenticatedUser.memberships?.some(
         (membership) =>
           membership.status ===
@@ -1968,74 +3295,390 @@ export const reviewInitiativeApprovalService = async ({
           [
             USER_ROLES_IN_ORGANIZATION.OWNER,
             USER_ROLES_IN_ORGANIZATION.ADMIN,
-          ].includes(membership.role) &&
-          membership.organizationId.toString() ===
-            initiative.municipality.toString()
-      ) ?? false
-    );
+          ].includes(
+            membership.role
+          ) &&
+          [
+            initiative.municipality.toString(),
+            initiative.leadOrganization.toString(),
+          ].includes(
+            membership.organizationId.toString()
+          )
+      ) ?? false;
 
-  if (!canReview) {
-    throw AppError.forbidden(
-      "You are not authorized to review this initiative."
-    );
-  }
+    if (!canManage) {
+      throw AppError.forbidden(
+        "You are not authorized to manage resource requirements for this initiative."
+      );
+    }
 
-  initiative.approval = {
-    decision,
-    reviewedBy:
-      authenticatedUser._id,
-    notes:
-      notes?.trim() || null,
-    reviewedAt:
-      new Date(),
-    revisionNumber:
-      (initiative.approval
-        ?.revisionNumber ?? 0) +
-      1,
-  };
+    const requirement =
+      await ResourceRequirement.findOne({
+        _id:
+          requirementId,
 
-  if (decision === "approved") {
-    initiative.status =
-      INITIATIVE_STATUSES.APPROVED;
+        initiative:
+          initiative._id,
+      });
 
-    initiative.readiness.municipalityApproved =
-      true;
+    if (!requirement) {
+      throw AppError.notFound(
+        "Resource requirement not found."
+      );
+    }
 
     /*
-     * Resource requirements are now verified
-     * and can participate in matching.
+     * ---------------------------------------------------
+     * Task dependencies
+     * ---------------------------------------------------
+     *
+     * task.schema.js should now use:
+     *
+     * dependency.resourceRequirement
      */
-    for (
-      const requirement of
-      initiative.resourceRequirements
+
+    const taskDependsOnRequirement =
+      initiative.tasks.some(
+        (task) =>
+          task.dependencies?.some(
+            (dependency) =>
+              dependency.type ===
+                DEPENDENCY_TYPES.RESOURCE &&
+              dependency.resourceRequirement
+                ?.toString() ===
+                requirementId.toString()
+          )
+      );
+
+    if (
+      taskDependsOnRequirement
     ) {
-      requirement.isVerifiedRequest =
-        true;
+      throw AppError.conflict(
+        "This resource requirement cannot be deleted because one or more tasks depend on it."
+      );
     }
-  }
 
-  if (decision === "rejected") {
-    initiative.status =
-      INITIATIVE_STATUSES.REJECTED;
+    /*
+     * ---------------------------------------------------
+     * Check related ResourceRequests
+     * ---------------------------------------------------
+     */
 
-    initiative.readiness.municipalityApproved =
-      false;
-  }
+    const hasResourceRequests =
+      await ResourceRequest.exists({
+        resourceRequirement:
+          requirement._id,
+      });
 
-  if (
-    decision === "changes_requested"
-  ) {
-    initiative.status =
-      INITIATIVE_STATUSES.CHANGES_REQUESTED;
+    if (hasResourceRequests) {
+      throw AppError.conflict(
+        "This resource requirement cannot be deleted because resource requests already reference it."
+      );
+    }
 
-    initiative.readiness.municipalityApproved =
-      false;
-  }
+    /*
+     * ---------------------------------------------------
+     * Check reservations
+     * ---------------------------------------------------
+     */
 
-  initiative.readiness.calculatedAt =
-    new Date();
+    const hasReservations =
+      await ResourceReservation.exists({
+        resourceRequirement:
+          requirement._id,
+      });
 
-  await initiative.save();
+    if (hasReservations) {
+      throw AppError.conflict(
+        "This resource requirement cannot be deleted because resource reservations already reference it."
+      );
+    }
 
-  return initiative;
-};
+    /*
+     * ---------------------------------------------------
+     * Check ContributionOffers
+     * ---------------------------------------------------
+     */
+
+    const hasOffers =
+      await ContributionOffer.exists({
+        "items.resourceRequirement":
+          requirement._id,
+      });
+
+    if (hasOffers) {
+      throw AppError.conflict(
+        "This resource requirement cannot be deleted because contribution offers already reference it."
+      );
+    }
+
+    await requirement.deleteOne();
+
+    return {
+      deletedRequirementId:
+        requirement._id,
+    };
+  };
+export const reviewInitiativeApprovalService =
+  async ({
+    initiativeId,
+    decision,
+    notes,
+    authenticatedUser,
+  }) => {
+    ensureValidObjectId(
+      initiativeId,
+      "initiativeId"
+    );
+
+    /*
+     * ---------------------------------------------
+     * Validate decision
+     * ---------------------------------------------
+     */
+
+    const allowedDecisions = [
+      "approved",
+      "rejected",
+      "changes_requested",
+    ];
+
+    if (
+      !allowedDecisions.includes(
+        decision
+      )
+    ) {
+      throw AppError.badRequest(
+        "Invalid initiative approval decision."
+      );
+    }
+
+    /*
+     * ---------------------------------------------
+     * Find Initiative
+     * ---------------------------------------------
+     */
+
+    const initiative =
+      await Initiative.findById(
+        initiativeId
+      );
+
+    if (!initiative) {
+      throw AppError.notFound(
+        "Initiative not found."
+      );
+    }
+
+    /*
+     * ---------------------------------------------
+     * Reviewable states
+     * ---------------------------------------------
+     */
+
+    if (
+      initiative.status !==
+        INITIATIVE_STATUSES.SUBMITTED &&
+      initiative.status !==
+        INITIATIVE_STATUSES.CHANGES_REQUESTED
+    ) {
+      throw AppError.badRequest(
+        "Only submitted initiatives or initiatives with requested changes can be reviewed."
+      );
+    }
+
+    /*
+     * ---------------------------------------------
+     * Authorization
+     *
+     * Municipality OWNER / ADMIN only.
+     * The municipality must be the one responsible
+     * for this Initiative.
+     * ---------------------------------------------
+     */
+
+    const canReview =
+      authenticatedUser.accountType ===
+        USER_ROLES.MUNICIPALITY &&
+      (
+        authenticatedUser.memberships?.some(
+          (membership) =>
+            membership.status ===
+              ACCOUNT_STATUSES.ACTIVE &&
+            [
+              USER_ROLES_IN_ORGANIZATION.OWNER,
+              USER_ROLES_IN_ORGANIZATION.ADMIN,
+            ].includes(
+              membership.role
+            ) &&
+            membership.organizationId.toString() ===
+              initiative.municipality.toString()
+        ) ?? false
+      );
+
+    if (!canReview) {
+      throw AppError.forbidden(
+        "You are not authorized to review this initiative."
+      );
+    }
+
+    /*
+     * ---------------------------------------------
+     * Save approval snapshot
+     * ---------------------------------------------
+     */
+
+    initiative.approval = {
+      decision,
+
+      reviewedBy:
+        authenticatedUser._id,
+
+      notes:
+        notes?.trim() || null,
+
+      reviewedAt:
+        new Date(),
+
+      revisionNumber:
+        (
+          initiative.approval
+            ?.revisionNumber ?? 0
+        ) + 1,
+    };
+
+    /*
+     * Ensure readiness exists.
+     *
+     * This also protects older DB documents that
+     * may have been created before readiness existed.
+     */
+    if (!initiative.readiness) {
+      initiative.readiness = {};
+    }
+
+    /*
+     * =============================================
+     * APPROVED
+     * =============================================
+     */
+
+    if (
+      decision === "approved"
+    ) {
+      initiative.status =
+        INITIATIVE_STATUSES.APPROVED;
+
+      initiative.readiness
+        .municipalityApproved = true;
+
+      /*
+       * ResourceRequirement is now standalone.
+       *
+       * Verify requirements that may still
+       * participate in resource matching.
+       */
+      await ResourceRequirement.updateMany(
+        {
+          initiative:
+            initiative._id,
+
+          status: {
+            $nin: [
+              "cancelled",
+              "delivered",
+            ],
+          },
+        },
+        {
+          $set: {
+            isVerifiedRequest: true,
+          },
+        }
+      );
+    }
+
+    /*
+     * =============================================
+     * REJECTED
+     * =============================================
+     */
+
+    if (
+      decision === "rejected"
+    ) {
+      initiative.status =
+        INITIATIVE_STATUSES.REJECTED;
+
+      initiative.readiness
+        .municipalityApproved = false;
+
+      /*
+       * Requirements from a rejected Initiative
+       * must not be exposed to resource matching.
+       */
+      await ResourceRequirement.updateMany(
+        {
+          initiative:
+            initiative._id,
+        },
+        {
+          $set: {
+            isVerifiedRequest: false,
+          },
+        }
+      );
+    }
+
+    /*
+     * =============================================
+     * CHANGES REQUESTED
+     * =============================================
+     */
+
+    if (
+      decision ===
+      "changes_requested"
+    ) {
+      initiative.status =
+        INITIATIVE_STATUSES
+          .CHANGES_REQUESTED;
+
+      initiative.readiness
+        .municipalityApproved = false;
+
+      /*
+       * Requirement data may change while the
+       * Initiative is revised, therefore it must
+       * not remain verified.
+       */
+      await ResourceRequirement.updateMany(
+        {
+          initiative:
+            initiative._id,
+        },
+        {
+          $set: {
+            isVerifiedRequest: false,
+          },
+        }
+      );
+    }
+
+    /*
+     * ---------------------------------------------
+     * Refresh readiness timestamp
+     *
+     * resourcesSatisfied and dependenciesSatisfied
+     * will be recalculated later by the dedicated
+     * readiness service.
+     * ---------------------------------------------
+     */
+
+    initiative.readiness.calculatedAt =
+      new Date();
+
+    await initiative.save();
+
+    return initiative;
+  };

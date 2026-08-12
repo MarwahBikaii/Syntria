@@ -110,7 +110,8 @@ router.post(
 router.delete(
   "/:issueId/support",
   authorizeRoles(
-    USER_ROLES.COMMUNITY_MEMBER
+    USER_ROLES.COMMUNITY_MEMBER,
+    USER_ROLES.COMMUNITY_ORGANIZATION
   ),
   removeIssueSupport
 );

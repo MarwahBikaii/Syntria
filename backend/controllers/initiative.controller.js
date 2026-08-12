@@ -1,6 +1,6 @@
 import {
  updatePhaseService,deletePhaseService,addPhaseService,deleteInitiativeService,submitInitiativeService, updateInitiativeService,createInitiativeService,getInitiativeByIdService
-,reviewInitiativeApprovalService,deleteResourceRequirementService,addResourceRequirementService,getResourceRequirementByIdService,updateResourceRequirementService,
+,reviewInitiativeApprovalService,deleteResourceRequirementService,addTaskService,addResourceRequirementService,getResourceRequirementByIdService,updateResourceRequirementService,
 } from "../services/initiative.service.js";
 
 import {

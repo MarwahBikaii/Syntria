@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 import { Initiative } from "../models/initiative.model.js";
 import { Resource } from "../models/resource.model.js";
+import { ResourceRequirement } from "../models/resource-requirement.model.js";
 import { ResourceRequest } from "../models/resource-request.model.js";
 import { ResourceReservation } from "../models/resource-reservation.model.js";
 
@@ -15,6 +16,12 @@ import {
 
 import { AppError } from "../utils/app-error.js";
 
+/*
+ * -------------------------------------------------------
+ * Helpers
+ * -------------------------------------------------------
+ */
+
 const ensureValidObjectId = (
   value,
   fieldName
@@ -25,6 +32,13 @@ const ensureValidObjectId = (
     );
   }
 };
+
+/*
+ * =======================================================
+ * CREATE RESOURCE REQUEST
+ * =======================================================
+ */
+
 export const createResourceRequestService =
   async ({
     initiativeId,
@@ -47,6 +61,10 @@ export const createResourceRequestService =
       );
     }
 
+    /*
+     * Resource requests can only happen
+     * after municipality approval.
+     */
     if (
       ![
         INITIATIVE_STATUSES.APPROVED,
@@ -58,6 +76,9 @@ export const createResourceRequestService =
       );
     }
 
+    /*
+     * Only OWNER/ADMIN of lead Community Organization.
+     */
     const canRequest =
       authenticatedUser.accountType ===
         USER_ROLES.COMMUNITY_ORGANIZATION &&
@@ -69,7 +90,9 @@ export const createResourceRequestService =
             [
               USER_ROLES_IN_ORGANIZATION.OWNER,
               USER_ROLES_IN_ORGANIZATION.ADMIN,
-            ].includes(membership.role) &&
+            ].includes(
+              membership.role
+            ) &&
             membership.organizationId.toString() ===
               initiative.leadOrganization.toString()
         ) ?? false
@@ -85,11 +108,16 @@ export const createResourceRequestService =
       resourceRequirementId,
       resource: resourceId,
       quantityRequested,
-      unit,
       requestedFrom,
       requestedUntil,
       requestNotes,
     } = payload;
+
+    /*
+     * ---------------------------------------------------
+     * Validate IDs
+     * ---------------------------------------------------
+     */
 
     ensureValidObjectId(
       resourceRequirementId,
@@ -101,14 +129,27 @@ export const createResourceRequestService =
       "resource"
     );
 
+    /*
+     * ---------------------------------------------------
+     * Find ResourceRequirement from separate collection
+     * ---------------------------------------------------
+     */
+
     const requirement =
-      initiative.resourceRequirements.id(
-        resourceRequirementId
-      );
+      await ResourceRequirement.findOne({
+        _id: resourceRequirementId,
+
+        /*
+         * Important:
+         * prevents using a requirement belonging
+         * to another initiative.
+         */
+        initiative: initiative._id,
+      });
 
     if (!requirement) {
       throw AppError.notFound(
-        "Resource requirement not found in this initiative."
+        "Resource requirement not found for this initiative."
       );
     }
 
@@ -118,13 +159,35 @@ export const createResourceRequestService =
       );
     }
 
+    if (
+      [
+        "fully_reserved",
+        "delivered",
+        "cancelled",
+      ].includes(requirement.status)
+    ) {
+      throw AppError.badRequest(
+        "This resource requirement is no longer available for resource requests."
+      );
+    }
+
+    /*
+     * ---------------------------------------------------
+     * Remaining requirement quantity
+     * ---------------------------------------------------
+     */
+
     const remainingQuantity =
       requirement.quantityRequired -
       requirement.quantityReserved;
 
+    const requestedQuantity =
+      Number(quantityRequested);
+
     if (
-      Number(quantityRequested) <= 0 ||
-      Number(quantityRequested) >
+      !Number.isFinite(requestedQuantity) ||
+      requestedQuantity <= 0 ||
+      requestedQuantity >
         remainingQuantity
     ) {
       throw AppError.badRequest(
@@ -132,26 +195,71 @@ export const createResourceRequestService =
       );
     }
 
+    /*
+     * ---------------------------------------------------
+     * Resource validation
+     * ---------------------------------------------------
+     */
+
     const resource =
       await Resource.findOne({
         _id: resourceId,
+
         isActive: true,
+
+        status: {
+          $in: [
+            "available",
+            "partially_reserved",
+          ],
+        },
       });
 
     if (!resource) {
       throw AppError.notFound(
-        "Resource not found or inactive."
+        "Resource not found or unavailable."
       );
     }
 
+    /*
+     * Requirement and Resource category must match.
+     */
     if (
-      resource.unit.toLowerCase() !==
-      unit?.trim().toLowerCase()
+      resource.category
+        .trim()
+        .toLowerCase() !==
+      requirement.category
+        .trim()
+        .toLowerCase()
     ) {
       throw AppError.badRequest(
-        `Resource unit must be "${resource.unit}".`
+        `Resource category must match requirement category "${requirement.category}".`
       );
     }
+
+    /*
+     * Requirement and Resource units must match.
+     *
+     * Do not trust the frontend to choose the unit.
+     */
+    if (
+      resource.unit
+        .trim()
+        .toLowerCase() !==
+      requirement.unit
+        .trim()
+        .toLowerCase()
+    ) {
+      throw AppError.badRequest(
+        `Resource unit "${resource.unit}" does not match requirement unit "${requirement.unit}".`
+      );
+    }
+
+    /*
+     * ---------------------------------------------------
+     * Requested dates
+     * ---------------------------------------------------
+     */
 
     const from =
       new Date(requestedFrom);
@@ -169,25 +277,64 @@ export const createResourceRequestService =
       );
     }
 
-    return ResourceRequest.create({
-      initiative: initiative._id,
+    /*
+     * Request should remain inside the
+     * requirement's required period.
+     */
+    if (
+      requirement.requiredFrom &&
+      from <
+        requirement.requiredFrom
+    ) {
+      throw AppError.badRequest(
+        "requestedFrom cannot be earlier than the resource requirement start date."
+      );
+    }
 
-      resourceRequirementId:
+    if (
+      requirement.requiredUntil &&
+      until >
+        requirement.requiredUntil
+    ) {
+      throw AppError.badRequest(
+        "requestedUntil cannot be later than the resource requirement end date."
+      );
+    }
+
+    /*
+     * ---------------------------------------------------
+     * Create targeted ResourceRequest
+     * ---------------------------------------------------
+     */
+
+    return ResourceRequest.create({
+      initiative:
+        initiative._id,
+
+      resourceRequirement:
         requirement._id,
 
       resource:
         resource._id,
 
+      /*
+       * Derived from Resource.
+       * Do not trust request body.
+       */
       partnerOrganization:
         resource.ownerOrganization,
 
       requestedBy:
         authenticatedUser._id,
 
-      quantityRequested,
+      quantityRequested:
+        requestedQuantity,
 
+      /*
+       * Derived from requirement.
+       */
       unit:
-        unit.trim(),
+        requirement.unit,
 
       requestedFrom:
         from,
@@ -196,12 +343,20 @@ export const createResourceRequestService =
         until,
 
       requestNotes:
-        requestNotes?.trim() || null,
+        requestNotes?.trim() ||
+        null,
 
       status:
         RESOURCE_REQUEST_STATUSES.PENDING,
     });
   };
+
+/*
+ * =======================================================
+ * REVIEW RESOURCE REQUEST
+ * =======================================================
+ */
+
 export const reviewResourceRequestService =
   async ({
     requestId,
@@ -245,6 +400,12 @@ export const reviewResourceRequestService =
       );
     }
 
+    /*
+     * ---------------------------------------------------
+     * Resource Partner authorization
+     * ---------------------------------------------------
+     */
+
     const canReview =
       authenticatedUser.accountType ===
         USER_ROLES.RESOURCE_PARTNER &&
@@ -256,7 +417,9 @@ export const reviewResourceRequestService =
             [
               USER_ROLES_IN_ORGANIZATION.OWNER,
               USER_ROLES_IN_ORGANIZATION.ADMIN,
-            ].includes(membership.role) &&
+            ].includes(
+              membership.role
+            ) &&
             membership.organizationId.toString() ===
               request.partnerOrganization.toString()
         ) ?? false
@@ -268,6 +431,12 @@ export const reviewResourceRequestService =
       );
     }
 
+    /*
+     * ---------------------------------------------------
+     * REJECT
+     * ---------------------------------------------------
+     */
+
     if (
       decision ===
       RESOURCE_REQUEST_STATUSES.REJECTED
@@ -278,8 +447,11 @@ export const reviewResourceRequestService =
       request.review = {
         reviewedBy:
           authenticatedUser._id,
+
         notes:
-          notes?.trim() || null,
+          notes?.trim() ||
+          null,
+
         reviewedAt:
           new Date(),
       };
@@ -292,6 +464,12 @@ export const reviewResourceRequestService =
       };
     }
 
+    /*
+     * ---------------------------------------------------
+     * ACCEPT
+     * ---------------------------------------------------
+     */
+
     const initiative =
       await Initiative.findById(
         request.initiative
@@ -303,14 +481,32 @@ export const reviewResourceRequestService =
       );
     }
 
+    /*
+     * ResourceRequirement is now independent.
+     */
     const requirement =
-      initiative.resourceRequirements.id(
-        request.resourceRequirementId
-      );
+      await ResourceRequirement.findOne({
+        _id:
+          request.resourceRequirement,
+
+        initiative:
+          initiative._id,
+      });
 
     if (!requirement) {
       throw AppError.notFound(
         "Referenced resource requirement no longer exists."
+      );
+    }
+
+    if (
+      requirement.status ===
+        "cancelled" ||
+      requirement.status ===
+        "delivered"
+    ) {
+      throw AppError.conflict(
+        "This resource requirement can no longer receive reservations."
       );
     }
 
@@ -327,42 +523,70 @@ export const reviewResourceRequestService =
       );
     }
 
-    const resource =
-      await Resource.findById(
-        request.resource
-      );
+    /*
+     * ---------------------------------------------------
+     * Re-check Resource
+     *
+     * Resource state may have changed since request
+     * submission.
+     * ---------------------------------------------------
+     */
 
-    if (
-      !resource ||
-      !resource.isActive
-    ) {
+    const resource =
+      await Resource.findOne({
+        _id:
+          request.resource,
+
+        isActive: true,
+
+        status: {
+          $in: [
+            "available",
+            "partially_reserved",
+          ],
+        },
+      });
+
+    if (!resource) {
       throw AppError.conflict(
         "The requested resource is no longer available."
       );
     }
 
+    /*
+     * ---------------------------------------------------
+     * Create reservation
+     * ---------------------------------------------------
+     */
+
     const reservation =
       await ResourceReservation.create({
+        initiative:
+          initiative._id,
+
+        resourceRequirement:
+          requirement._id,
+
         resource:
           resource._id,
 
-        initiative:
-          initiative._id,
+        /*
+         * Exactly one reservation source.
+         */
+        resourceRequest:
+          request._id,
 
         contributionOffer:
           null,
 
-        resourceRequest:
-          request._id,
-
-        resourceRequirementId:
-          requirement._id,
+        contributionOfferItemId:
+          null,
 
         quantity:
           request.quantityRequested,
 
         unit:
-          request.unit,
+          requirement.unit,
 
         reservedFrom:
           request.requestedFrom,
@@ -370,12 +594,38 @@ export const reviewResourceRequestService =
         reservedUntil:
           request.requestedUntil,
 
+        /*
+         * ResourceRequest itself currently has
+         * no agreed price.
+         *
+         * ContributionOffer reservations can
+         * populate these values.
+         */
+        agreedUnitPrice:
+          null,
+
+        agreedAdditionalCost:
+          0,
+
+        agreedTotalCost:
+          null,
+
+        currency:
+          requirement.currency ||
+          "USD",
+
         reservedBy:
           authenticatedUser._id,
 
         status:
           "active",
       });
+
+    /*
+     * ---------------------------------------------------
+     * Update ResourceRequirement
+     * ---------------------------------------------------
+     */
 
     requirement.quantityReserved +=
       request.quantityRequested;
@@ -394,23 +644,33 @@ export const reviewResourceRequestService =
         "partially_met";
     }
 
+    /*
+     * ---------------------------------------------------
+     * Update ResourceRequest
+     * ---------------------------------------------------
+     */
+
     request.status =
       RESOURCE_REQUEST_STATUSES.ACCEPTED;
 
     request.review = {
       reviewedBy:
         authenticatedUser._id,
+
       notes:
-        notes?.trim() || null,
+        notes?.trim() ||
+        null,
+
       reviewedAt:
         new Date(),
     };
 
-    await initiative.save();
+    await requirement.save();
     await request.save();
 
     return {
       request,
       reservation,
+      requirement,
     };
   };

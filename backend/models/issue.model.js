@@ -63,10 +63,7 @@ const aiAnalysisSchema = new Schema(
       default: Date.now,
     },
 
-    rawSnapshot: {
-      type: Schema.Types.Mixed,
-      select: false,
-    },
+   
   },
   {
     _id: false,

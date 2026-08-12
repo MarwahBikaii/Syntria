@@ -180,6 +180,10 @@ const initiativeSchema = new Schema({
     enum: Object.values(INITIATIVE_STATUSES),
     default: INITIATIVE_STATUSES.DRAFT,
   },
+  submittedAt: {
+    type: Date,
+    default: null,
+  },
 
   sourceIssue: {
     type: Schema.Types.ObjectId,
