@@ -48,14 +48,14 @@ const resourceReservationSchema =
         type: Schema.Types.ObjectId,
         ref: "ResourceRequest",
         default: null,
-        index: true,
+       
       },
 
       contributionOffer: {
         type: Schema.Types.ObjectId,
         ref: "ContributionOffer",
         default: null,
-        index: true,
+  
       },
 
       /*
@@ -208,7 +208,9 @@ resourceReservationSchema.index({
   resourceRequest: 1,
 });
 
-
+resourceReservationSchema.index({
+  contributionOffer: 1,
+});
 
 /*
  * -------------------------------------------------------

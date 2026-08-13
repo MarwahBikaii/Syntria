@@ -3682,3 +3682,249 @@ export const reviewInitiativeApprovalService =
 
     return initiative;
   };
+  const escapeRegex = (value) => {
+  return value.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&"
+  );
+};
+
+export const filterInitiativesService =
+  async ({
+    query,
+    authenticatedUser,
+  }) => {
+    const {
+      leadOrganization,
+      municipality,
+      title,
+      tags,
+      status,
+      actualStartAt,
+      plannedStartAt,
+      plannedEndAt,
+    } = query;
+
+    const filter = {};
+
+    /*
+     * -----------------------------------------
+     * Lead Organization
+     * -----------------------------------------
+     */
+
+    if (leadOrganization) {
+      ensureValidObjectId(
+        leadOrganization,
+        "leadOrganization"
+      );
+
+      filter.leadOrganization =
+        leadOrganization;
+    }
+
+    /*
+     * -----------------------------------------
+     * Municipality
+     * -----------------------------------------
+     */
+
+    if (municipality) {
+      ensureValidObjectId(
+        municipality,
+        "municipality"
+      );
+
+      filter.municipality =
+        municipality;
+    }
+
+    /*
+     * -----------------------------------------
+     * Partial title search
+     *
+     * Example:
+     * ?title=park
+     *
+     * matches:
+     * "Green Park Restoration"
+     * "Park Cleanup Initiative"
+     * -----------------------------------------
+     */
+
+    if (title?.trim()) {
+      filter.title = {
+        $regex:
+          escapeRegex(title.trim()),
+        $options: "i",
+      };
+    }
+
+    /*
+     * -----------------------------------------
+     * Tags
+     *
+     * URL:
+     * ?tags=environment,cleanup
+     *
+     * $in means at least one tag matches.
+     * -----------------------------------------
+     */
+
+    if (tags) {
+      const parsedTags =
+        String(tags)
+          .split(",")
+          .map((tag) =>
+            tag.trim().toLowerCase()
+          )
+          .filter(Boolean);
+
+      if (parsedTags.length > 0) {
+        filter.tags = {
+          $in: parsedTags,
+        };
+      }
+    }
+
+    /*
+     * -----------------------------------------
+     * Status
+     * -----------------------------------------
+     */
+
+    if (status) {
+      if (
+        !Object.values(
+          INITIATIVE_STATUSES
+        ).includes(status)
+      ) {
+        throw AppError.badRequest(
+          "Invalid initiative status."
+        );
+      }
+
+      filter.status = status;
+    }
+
+    /*
+     * -----------------------------------------
+     * Actual Start Date
+     *
+     * IMPORTANT:
+     * actualStartAt is inside executionPeriod.
+     * -----------------------------------------
+     */
+
+    if (actualStartAt) {
+      const date =
+        new Date(actualStartAt);
+
+      if (
+        Number.isNaN(
+          date.getTime()
+        )
+      ) {
+        throw AppError.badRequest(
+          "actualStartAt is invalid."
+        );
+      }
+
+      /*
+       * Search that entire calendar day.
+       */
+      const nextDay =
+        new Date(date);
+
+      nextDay.setUTCDate(
+        nextDay.getUTCDate() + 1
+      );
+
+      filter[
+        "executionPeriod.actualStartAt"
+      ] = {
+        $gte: date,
+        $lt: nextDay,
+      };
+    }
+
+    /*
+     * -----------------------------------------
+     * Planned Start
+     * -----------------------------------------
+     */
+
+    if (plannedStartAt) {
+      const date =
+        new Date(plannedStartAt);
+
+      if (
+        Number.isNaN(
+          date.getTime()
+        )
+      ) {
+        throw AppError.badRequest(
+          "plannedStartAt is invalid."
+        );
+      }
+
+      filter[
+        "executionPeriod.plannedStartAt"
+      ] = {
+        $gte: date,
+      };
+    }
+
+    /*
+     * -----------------------------------------
+     * Planned End
+     * -----------------------------------------
+     */
+
+    if (plannedEndAt) {
+      const date =
+        new Date(plannedEndAt);
+
+      if (
+        Number.isNaN(
+          date.getTime()
+        )
+      ) {
+        throw AppError.badRequest(
+          "plannedEndAt is invalid."
+        );
+      }
+
+      filter[
+        "executionPeriod.plannedEndAt"
+      ] = {
+        $lte: date,
+      };
+    }
+
+    /*
+     * -----------------------------------------
+     * Query
+     * -----------------------------------------
+     */
+
+    const initiatives =
+      await Initiative.find(filter)
+        .populate(
+          "municipality",
+          "name organizationType"
+        )
+        .populate(
+          "leadOrganization",
+          "name organizationType"
+        )
+        .populate(
+          "createdBy",
+          "firstName lastName email accountType"
+        )
+        .sort({
+          createdAt: -1,
+        });
+
+    return initiatives;
+  };

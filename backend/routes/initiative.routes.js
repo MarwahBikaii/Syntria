@@ -1,7 +1,7 @@
 import express from "express";
 
 import {
-  reviewInitiativeApproval,getResourceRequirementById,addResourceRequirement,deleteResourceRequirement,updateResourceRequirement,getTaskById,addTask,deleteTask,updateTask,updatePhase,deletePhase,addPhase,submitInitiative,deleteInitiative,createInitiative,getInitiativeById,updateInitiative
+  filterInitiatives,getInitiatives,reviewInitiativeApproval,getResourceRequirementById,addResourceRequirement,deleteResourceRequirement,updateResourceRequirement,getTaskById,addTask,deleteTask,updateTask,updatePhase,deletePhase,addPhase,submitInitiative,deleteInitiative,createInitiative,getInitiativeById,updateInitiative
 } from "../controllers/initiative.controller.js";
 import {createResourceRequest} from "../controllers/resource-request.controller.js"
 import {
@@ -28,6 +28,18 @@ router.post(
     USER_ROLES.COMMUNITY_ORGANIZATION
   ),
   createInitiative
+);
+
+router.get(
+  "/filter",
+  authorizeRoles(
+    USER_ROLES.MUNICIPALITY,
+    USER_ROLES.COMMUNITY_ORGANIZATION,
+    USER_ROLES.RESOURCE_PARTNER,
+    USER_ROLES.COMMUNITY_MEMBER
+
+  ),
+  filterInitiatives
 );
 
 router.get(
@@ -106,6 +118,21 @@ router.get(
   getTaskById
 );
 
+
+router.get(
+  "/",
+  authorizeRoles(
+    USER_ROLES.MUNICIPALITY,
+    USER_ROLES.COMMUNITY_ORGANIZATION,
+    USER_ROLES.RESOURCE_PARTNER,
+    USER_ROLES.COMMUNITY_MEMBER
+
+  ),
+  getInitiatives
+);
+
+
+ 
 router.patch(
   "/:initiativeId/tasks/:taskId",
   authorizeRoles(

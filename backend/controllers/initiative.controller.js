@@ -1,5 +1,6 @@
+import { Initiative } from "../models/initiative.model.js";
 import {
- updatePhaseService,deletePhaseService,addPhaseService,deleteInitiativeService,submitInitiativeService, updateInitiativeService,createInitiativeService,getInitiativeByIdService
+ filterInitiativesService,updatePhaseService,deletePhaseService,addPhaseService,deleteInitiativeService,submitInitiativeService, updateInitiativeService,createInitiativeService,getInitiativeByIdService
 ,reviewInitiativeApprovalService,deleteResourceRequirementService,addTaskService,addResourceRequirementService,getResourceRequirementByIdService,updateResourceRequirementService,
 } from "../services/initiative.service.js";
 
@@ -41,6 +42,39 @@ export const createInitiative =
       success: true,
       data: {
         initiative,
+      },
+    });
+  });
+
+
+    export const getInitiatives =
+  asyncHandler(async (req, res) => {
+    const initiative =
+      await Initiative.find({});
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        initiative,
+      },
+    });
+  });
+
+export const filterInitiatives =
+  asyncHandler(async (req, res) => {
+    const initiatives =
+      await filterInitiativesService({
+        query: req.query,
+        authenticatedUser: req.user,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Initiatives filtered successfully.",
+      count: initiatives.length,
+      data: {
+        initiatives,
       },
     });
   });
