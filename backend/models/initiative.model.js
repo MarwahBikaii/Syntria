@@ -73,6 +73,7 @@ const approvalSchema = new Schema(
     reviewedBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
+      default: null,
     },
 
     notes: {
@@ -83,6 +84,7 @@ const approvalSchema = new Schema(
 
     reviewedAt: {
       type: Date,
+      default: null,
     },
 
     revisionNumber: {
@@ -219,10 +221,12 @@ const initiativeSchema = new Schema({
 
     actualStartAt: {
       type: Date,
+      default: null,
     },
 
     actualEndAt: {
       type: Date,
+      default: null,
     },
   },
 
