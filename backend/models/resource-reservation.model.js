@@ -208,9 +208,7 @@ resourceReservationSchema.index({
   resourceRequest: 1,
 });
 
-resourceReservationSchema.index({
-  contributionOffer: 1,
-});
+
 
 /*
  * -------------------------------------------------------

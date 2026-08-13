@@ -237,27 +237,6 @@ const initiativeSchema = new Schema({
   },
 
 
-
-  availableResources: [
-    {
-      resource: {
-        type: Schema.Types.ObjectId,
-        ref: "Resource",
-      },
-
-      quantity: {
-        type: Number,
-        min: 0,
-      },
-
-      notes: {
-        type: String,
-        trim: true,
-        maxlength: 1000,
-      },
-    },
-  ],
-
   approval: {
     type: approvalSchema,
     default: () => ({}),

@@ -7,13 +7,7 @@ import {
 
 const { Schema, model } = mongoose;
 
-/**
- * Embedded organization membership.
- *
- * A user may belong to one or more organizations.
- * This is embedded because the membership belongs directly
- * to the user and does not need an independent lifecycle.
- */
+
 const membershipSchema = new Schema(
   {
     organizationId: {
