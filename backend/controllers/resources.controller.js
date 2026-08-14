@@ -5,7 +5,8 @@ import {
   getResourcesService,
   getResourceByIdService,
   updateResourceService,
-  deleteResourceService,getMatchingResourcesService
+  deleteResourceService,
+  getMatchingResourcesService
 } from "../services/resource.service.js";
 
 
@@ -66,6 +67,28 @@ export const getResourceById =
     });
   });
 
+  export const getMatchingResources =
+  asyncHandler(async (req, res) => {
+    const resource =
+      await getMatchingResourcesService({
+        
+        initiativeId:
+        req.params.initiativeId,
+
+        resourceRequirement:
+        req.params.resourceRequirementId,
+
+        authenticatedUser:
+          req.user,
+      });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        resource,
+      },
+    });
+  });
 
 export const updateResource =
   asyncHandler(async (req, res) => {
@@ -105,20 +128,5 @@ export const deleteResource =
       message:
         "Resource deleted successfully.",
       data: result,
-    });
-  });
-  export const getMatchingResources =
-  asyncHandler(async (req, res) => {
-    const matches =
-      await getMatchingResourcesService({
-        initiativeId:
-          req.params.initiativeId,
-      });
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        matches,
-      },
     });
   });

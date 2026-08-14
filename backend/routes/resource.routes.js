@@ -6,6 +6,7 @@ import {
   getResourceById,
   updateResource,
   deleteResource,
+  getMatchingResources
 } from "../controllers/resources.controller.js";
 
 import {
@@ -35,6 +36,13 @@ router
     createResource
   );
 
+  router.route("/:initiativeId/requirement/:resourceRequirementId/matching-resources")
+  .get(
+     authorizeRoles(
+      USER_ROLES.MUNICIPALITY,
+      USER_ROLES.COMMUNITY_ORGANIZATION
+     ),getMatchingResources
+  )
 router
   .route("/:resourceId")
   .get(getResourceById)
