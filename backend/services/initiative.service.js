@@ -33,6 +33,7 @@ import {
   getActiveMemberships,
   getActiveMembershipByOrganizationId,
 } from "../utils/organization-membership.js";
+import { authenticate } from "../middleware/auth.middleware.js";
 
 
 const ensureValidObjectId = (value, fieldName) => {
@@ -41,6 +42,20 @@ const ensureValidObjectId = (value, fieldName) => {
       `${fieldName} must be a valid MongoDB ObjectId.`
     );
   }
+};
+
+//regex is a language describing string pattern to match
+// .=> any character as such p.rk can be park pork...
+// * means repeat previous 0 or more times
+//so sanitizing user input is important
+
+// \\ = > insert literal \
+const escapeRegex = (value) => {
+  return value.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&"// $& insert whatever character that matched
+
+  );
 };
 
 const validateTaskDependencies = async ({
@@ -531,6 +546,12 @@ export const createInitiativeService = async ({
     );
   }
 
+  if (executionPeriod.actualStartAt)
+    var actualStartAt= new Date(executionPeriod.actualStartAt)
+
+  if (executionPeriod.actualEndAt)
+    var actualEndAt= new Date(executionPeriod.actualEndAt)
+
   const plannedStartAt = new Date(
     executionPeriod.plannedStartAt
   );
@@ -541,7 +562,11 @@ export const createInitiativeService = async ({
 
   if (
     Number.isNaN(plannedStartAt.getTime()) ||
-    Number.isNaN(plannedEndAt.getTime())
+    Number.isNaN(plannedEndAt.getTime())||
+    Number.isNaN(actualStartAt.getTime())
+||
+   Number.isNaN(actualEndAt.getTime())
+
   ) {
     throw AppError.badRequest(
       "Invalid execution period dates."
@@ -755,6 +780,8 @@ export const createInitiativeService = async ({
     executionPeriod: {
       plannedStartAt,
       plannedEndAt,
+      actualStartAt,
+      actualEndAt
     },
 
     tags: Array.isArray(tags)
@@ -3682,12 +3709,7 @@ export const reviewInitiativeApprovalService =
 
     return initiative;
   };
-  const escapeRegex = (value) => {
-  return value.replace(
-    /[.*+?^${}()|[\]\\]/g,
-    "\\$&"
-  );
-};
+
 
 export const filterInitiativesService =
   async ({
@@ -3701,6 +3723,7 @@ export const filterInitiativesService =
       tags,
       status,
       actualStartAt,
+      actualEndAt,
       plannedStartAt,
       plannedEndAt,
     } = query;
@@ -3751,6 +3774,13 @@ export const filterInitiativesService =
      * "Park Cleanup Initiative"
      * -----------------------------------------
      */
+    //escapeRegex sanitizes user's input before giving it to regex
+    //regex: pattern matching
+    // if user does .* => match everything
+    //park=> park
+    // park. => park\. => mongodb interprets . as actual period
+
+
 
     if (title?.trim()) {
       filter.title = {
@@ -3771,6 +3801,8 @@ export const filterInitiativesService =
      * -----------------------------------------
      */
 
+
+
     if (tags) {
       const parsedTags =
         String(tags)
@@ -3779,6 +3811,7 @@ export const filterInitiativesService =
             tag.trim().toLowerCase()
           )
           .filter(Boolean);
+          //keep actual strings, not empty elements, or undefined, or null 
 
       if (parsedTags.length > 0) {
         filter.tags = {
@@ -3811,10 +3844,10 @@ export const filterInitiativesService =
      * -----------------------------------------
      * Actual Start Date
      *
-     * IMPORTANT:
-     * actualStartAt is inside executionPeriod.
+     
      * -----------------------------------------
      */
+
 
     if (actualStartAt) {
       const date =
@@ -3848,6 +3881,27 @@ export const filterInitiativesService =
       };
     }
 
+    /*
+ * -----------------------------------------
+ * Actual End
+ * -----------------------------------------
+ */
+
+if (actualEndAt) {
+  const date = new Date(actualEndAt);
+
+  if (Number.isNaN(date.getTime())) {
+    throw AppError.badRequest(
+      "actualEndAt is invalid."
+    );
+  }
+
+  filter[
+    "executionPeriod.actualEndAt"
+  ] = {
+    $lte: date,
+  };
+}
     /*
      * -----------------------------------------
      * Planned Start
@@ -3902,6 +3956,28 @@ export const filterInitiativesService =
       };
     }
 
+    if (
+  plannedStartAt &&
+  plannedEndAt &&
+  new Date(plannedEndAt) <
+    new Date(plannedStartAt)
+) {
+  throw AppError.badRequest(
+    "plannedEndAt cannot be before plannedStartAt."
+  );
+}
+
+if (
+  actualStartAt &&
+  actualEndAt &&
+  new Date(actualEndAt) <
+    new Date(actualStartAt)
+) {
+  throw AppError.badRequest(
+    "actualEndAt cannot be before actualStartAt."
+  );
+}
+
     /*
      * -----------------------------------------
      * Query
@@ -3928,3 +4004,4 @@ export const filterInitiativesService =
 
     return initiatives;
   };
+
