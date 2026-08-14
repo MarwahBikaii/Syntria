@@ -6,7 +6,7 @@ import {
 } from "../constants/enums.js";
 
 const { Schema, model } = mongoose;
-
+import { locationSchema } from "./embedded/location.schema.js";
 
 const membershipSchema = new Schema(
   {
@@ -153,6 +153,10 @@ passwordConfirm: {
       maxlength: [30, "Phone number cannot exceed 30 characters."],
     },
 
+    location:{
+      type:locationSchema,
+      default:null
+    },
     accountType: {
       type: String,
       enum: {

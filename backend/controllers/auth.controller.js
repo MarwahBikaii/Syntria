@@ -70,9 +70,15 @@ export const signup = async (req, res) => {
       passwordConfirm,
       phone,
       accountType,
+      location,
       organizationId,
     } = req.body;
 
+    const longitude= location.coordinates.coordinates[0];
+    const latitude= location.coordinates.coordinates[1];
+
+    // const [longitude,latitude]= location..coordinates.coordinates;
+    
     if (
       !firstName ||
       !lastName ||
@@ -104,6 +110,24 @@ export const signup = async (req, res) => {
           "This account type cannot be selected during public registration.",
       });
     }
+    
+      if (
+        longitude < -180 ||
+        longitude > 180
+      ) {
+        throw AppError.badRequest(
+          "User longitude is invalid."
+        );
+      }
+    
+      if (
+        latitude < -90 ||
+        latitude > 90
+      ) {
+        throw AppError.badRequest(
+          "User latitude is invalid."
+        );
+      }
 
     const normalizedEmail = email
       .trim()
@@ -184,6 +208,7 @@ export const signup = async (req, res) => {
       lastName,
       email: normalizedEmail,
       password,
+      location:location,
       passwordConfirm,
       phone: phone || null,
       accountType,

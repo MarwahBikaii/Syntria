@@ -5,6 +5,7 @@ import userRoutes from "./user.routes.js";
 import authRoutes from "./auth.routes.js";
 import resourceRoutes from "./resource.routes.js";
 import contributionOfferRoutes from "./contribution-offer.routes.js";
+import workItemsRoutes from "./workItems.routes.js";
 
 const router = express.Router();
 
@@ -21,5 +22,6 @@ router.use("/users", userRoutes);
 router.use("/issues", issueRoutes);
 router.use("/initiatives", initiativeRoutes);
 router.use("/resources", resourceRoutes);
+router.use("/workItems", workItemsRoutes);
 router.use("/contributionOffers", contributionOfferRoutes);
 export default router;
