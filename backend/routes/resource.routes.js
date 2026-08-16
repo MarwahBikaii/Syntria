@@ -36,7 +36,7 @@ router
     createResource
   );
 
-  router.route("/:initiativeId/requirement/:resourceRequirementId/matching-resources")
+  router.route("/requirement/:resourceRequirementId/matching-resources")
   .get(
      authorizeRoles(
       USER_ROLES.MUNICIPALITY,

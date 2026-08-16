@@ -71,11 +71,8 @@ export const getResourceById =
   asyncHandler(async (req, res) => {
     const resource =
       await getMatchingResourcesService({
-        
-        initiativeId:
-        req.params.initiativeId,
 
-        resourceRequirement:
+        resourceRequirementId:
         req.params.resourceRequirementId,
 
         authenticatedUser:

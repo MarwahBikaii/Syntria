@@ -398,6 +398,9 @@ export const deleteResourceService = async ({
  
  */
 
+//During the required period, what is the 
+// highest quantity of this resource that 
+// is already reserved at the same time?
 const getMaximumConcurrentReservedQuantity = ({
   reservations,
   requiredFrom,
@@ -417,12 +420,14 @@ const getMaximumConcurrentReservedQuantity = ({
 
     const startAt =
       reservationStart > requiredFrom
+      //take start as later , to ensure overlapping detection
         ? reservationStart
         : requiredFrom;
 
     const endAt =
       reservationEnd < requiredUntil
         ? reservationEnd
+      //take end as earlier , to detect unavailability of resources early
         : requiredUntil;
 
     /*
@@ -474,75 +479,61 @@ const getMaximumConcurrentReservedQuantity = ({
 };
 
 
-/*
- * -------------------------------------------------------
- * GET MATCHING RESOURCES
- * -------------------------------------------------------
- */
 
 export const getMatchingResourcesService =
   async ({
-    initiativeId,
-
-    /*
-     * Your current controller sends:
-     *
-     * resourceRequirement:
-     * req.params.resourceRequirementId
-     */
-    resourceRequirement,
-
+    resourceRequirementId,
     authenticatedUser,
   }) => {
-    /*
-     * ---------------------------------------------------
-     * Validate IDs
-     * ---------------------------------------------------
-     */
+  
 
     ensureValidObjectId(
-      initiativeId,
-      "initiativeId"
-    );
-
-    ensureValidObjectId(
-      resourceRequirement,
+      resourceRequirementId,
       "resourceRequirementId"
     );
 
+  
 
-    /*
-     * ---------------------------------------------------
-     * Find Initiative
-     * ---------------------------------------------------
-     */
+    const requirement =
+      await ResourceRequirement.findById(
+        resourceRequirementId
+      );
+
+    if (!requirement) {
+      throw AppError.notFound(
+        "Resource requirement not found."
+      );
+    }
+
+  
 
     const initiative =
       await Initiative.findById(
-        initiativeId
+        requirement.initiative
       );
 
     if (!initiative) {
       throw AppError.notFound(
-        "Initiative not found."
+        "Initiative associated with this resource requirement was not found."
       );
     }
 
+    
+    const initiativeId =
+      initiative._id;
 
-    /*
-     * ---------------------------------------------------
-     * Authorization
-     *
-     * Municipality OWNER / ADMIN
-     * OR
-     * Lead Community Organization OWNER / ADMIN
-     * ---------------------------------------------------
-     */
+    const municipalityId =
+      initiative.municipality;
+
+    const leadOrganizationId =
+      initiative.leadOrganization;
+
+ 
 
     let canViewMatches = false;
 
     /*
-     * Municipality
+     * Municipality user
      */
     if (
       authenticatedUser.accountType ===
@@ -553,24 +544,20 @@ export const getMatchingResourcesService =
           (membership) =>
             membership.status ===
               ACCOUNT_STATUSES.ACTIVE &&
-
             [
               USER_ROLES_IN_ORGANIZATION.OWNER,
               USER_ROLES_IN_ORGANIZATION.ADMIN,
             ].includes(
               membership.role
             ) &&
-
             membership.organizationId
               .toString() ===
-              initiative.municipality
-                .toString()
+              municipalityId.toString()
         ) ?? false;
     }
 
-
     /*
-     * Lead Community Organization
+     * Community Organization user
      */
     if (
       authenticatedUser.accountType ===
@@ -581,21 +568,17 @@ export const getMatchingResourcesService =
           (membership) =>
             membership.status ===
               ACCOUNT_STATUSES.ACTIVE &&
-
             [
               USER_ROLES_IN_ORGANIZATION.OWNER,
               USER_ROLES_IN_ORGANIZATION.ADMIN,
             ].includes(
               membership.role
             ) &&
-
             membership.organizationId
               .toString() ===
-              initiative.leadOrganization
-                .toString()
+              leadOrganizationId.toString()
         ) ?? false;
     }
-
 
     if (!canViewMatches) {
       throw AppError.forbidden(
@@ -603,18 +586,9 @@ export const getMatchingResourcesService =
       );
     }
 
-
     /*
      * ---------------------------------------------------
-     * Initiative must already be approved.
-     *
-     * Matching should not happen for:
-     *
-     * draft
-     * submitted
-     * changes_requested
-     * rejected
-     * cancelled
+     * Initiative status validation
      * ---------------------------------------------------
      */
 
@@ -633,57 +607,23 @@ export const getMatchingResourcesService =
       );
     }
 
-
     /*
      * ---------------------------------------------------
-     * Find standalone ResourceRequirement
-     *
-     * IMPORTANT:
-     *
-     * We intentionally query:
-     *
-     * {
-     *   _id: resourceRequirement,
-     *   initiative: initiativeId
-     * }
-     *
-     * This guarantees the requirement actually belongs
-     * to the Initiative passed in the URL.
-     * ---------------------------------------------------
-     */
-
-    const requirement =
-      await ResourceRequirement.findOne({
-        _id: resourceRequirement,
-        initiative: initiativeId,
-      });
-
-    if (!requirement) {
-      throw AppError.notFound(
-        "Resource requirement was not found for this initiative."
-      );
-    }
-
-
-    /*
-     * ---------------------------------------------------
-     * Requirement must be verified
+     * Requirement must be municipality verified
      * ---------------------------------------------------
      */
 
     if (
-      requirement.isVerifiedRequest !==
-      true
+      requirement.isVerifiedRequest !== true
     ) {
       throw AppError.badRequest(
         "The resource requirement must be verified before resources can be matched."
       );
     }
 
-
     /*
      * ---------------------------------------------------
-     * Do not match already finished/cancelled requirements
+     * Requirement must still need resources
      * ---------------------------------------------------
      */
 
@@ -699,17 +639,16 @@ export const getMatchingResourcesService =
       );
     }
 
-
     /*
      * ---------------------------------------------------
-     * Remaining quantity
+     * Calculate remaining required quantity
      *
      * Example:
      *
-     * required = 10
-     * reserved = 4
+     * quantityRequired = 5
+     * quantityReserved = 3
      *
-     * still needed = 6
+     * remainingQuantity = 2
      * ---------------------------------------------------
      */
 
@@ -717,19 +656,20 @@ export const getMatchingResourcesService =
       requirement.quantityRequired -
       requirement.quantityReserved;
 
-    if (remainingQuantity <= 0) {
+
+
+     //already checked if the requirment is fully reserved, meaning reserved=required, don't find match
+
+     //double checking
+   if (remainingQuantity <= 0) {
       throw AppError.conflict(
         "This resource requirement is already fully reserved."
       );
     }
 
-
     /*
      * ---------------------------------------------------
      * Required dates
-     *
-     * Matching requires a defined period because resource
-     * availability and reservations are date-sensitive.
      * ---------------------------------------------------
      */
 
@@ -742,7 +682,6 @@ export const getMatchingResourcesService =
       );
     }
 
-
     const requiredFrom =
       new Date(
         requirement.requiredFrom
@@ -753,10 +692,15 @@ export const getMatchingResourcesService =
         requirement.requiredUntil
       );
 
-
     /*
      * ---------------------------------------------------
-     * Only active + verified Resource Partner orgs
+     * Find eligible Resource Partner organizations
+     *
+     * Resource must belong to:
+     *
+     * - Resource Partner
+     * - active organization
+     * - verified organization
      * ---------------------------------------------------
      */
 
@@ -772,17 +716,25 @@ export const getMatchingResourcesService =
           VERIFICATION_STATUSES.VERIFIED,
       }).distinct("_id");
 
-
     if (
       eligiblePartnerIds.length === 0
     ) {
       return [];
     }
 
-
     /*
      * ---------------------------------------------------
-     * Base Resource matching filter
+     * Resource base matching
+     * ---------------------------------------------------
+     *
+     * Match:
+     *
+     * category
+     * unit
+     * service area
+     * dates
+     * active status
+     * Resource Partner
      * ---------------------------------------------------
      */
 
@@ -791,25 +743,12 @@ export const getMatchingResourcesService =
         $in: eligiblePartnerIds,
       },
 
-      /*
-       * Exact requirement category.
-       */
       category:
         requirement.category,
 
-      /*
-       * Unit must match.
-       *
-       * Example:
-       * requirement.unit = "vehicle"
-       * resource.unit = "vehicle"
-       */
       unit:
         requirement.unit,
 
-      /*
-       * Resource must be usable.
-       */
       isActive: true,
 
       status: {
@@ -819,9 +758,10 @@ export const getMatchingResourcesService =
         ],
       },
 
+ 
       /*
-       * At least one availability window must cover
-       * the ENTIRE required period.
+       * Resource must contain at least one window
+       * that covers the FULL requirement period.
        */
       availabilityWindows: {
         $elemMatch: {
@@ -840,14 +780,9 @@ export const getMatchingResourcesService =
       },
     };
 
-
     /*
      * ---------------------------------------------------
      * Service area
-     *
-     * If the requirement specifies Tripoli:
-     *
-     * Resource.serviceAreas must contain Tripoli.
      * ---------------------------------------------------
      */
 
@@ -856,10 +791,9 @@ export const getMatchingResourcesService =
         requirement.serviceArea;
     }
 
-
     /*
      * ---------------------------------------------------
-     * Get candidate Resources
+     * Find initial Resource candidates
      * ---------------------------------------------------
      */
 
@@ -873,24 +807,15 @@ export const getMatchingResourcesService =
         )
         .lean();
 
-
     if (
       candidateResources.length === 0
     ) {
       return [];
     }
 
-
     /*
      * ---------------------------------------------------
-     * Load ACTIVE reservations for all candidate resources.
-     *
-     * One query instead of one query per Resource.
-     *
-     * Date overlap rule:
-     *
-     * reservation.start < requiredUntil
-     * reservation.end   > requiredFrom
+     * Get candidate Resource IDs
      * ---------------------------------------------------
      */
 
@@ -899,7 +824,19 @@ export const getMatchingResourcesService =
         (resource) =>
           resource._id
       );
+      // resource=> return resource.id
 
+    /*
+     * ---------------------------------------------------
+     * Find active reservations overlapping
+     * requirement period
+     *
+     * Overlap:
+     *
+     * reservation start < required end
+     * reservation end   > required start
+     * ---------------------------------------------------
+     */
 
     const activeReservations =
       await ResourceReservation.find({
@@ -922,7 +859,6 @@ export const getMatchingResourcesService =
         )
         .lean();
 
-
     /*
      * ---------------------------------------------------
      * Group reservations by Resource
@@ -931,7 +867,6 @@ export const getMatchingResourcesService =
 
     const reservationsByResource =
       new Map();
-
 
     for (
       const reservation
@@ -956,23 +891,21 @@ export const getMatchingResourcesService =
         .push(reservation);
     }
 
-
     /*
      * ---------------------------------------------------
-     * Calculate actual availability + match score
+     * Build final matches
      * ---------------------------------------------------
      */
 
     const matches = [];
-
 
     for (
       const resource
       of candidateResources
     ) {
       /*
-       * Find windows that cover the entire
-       * requirement period.
+       * Find windows covering the complete
+       * ResourceRequirement period.
        */
       const coveringWindows =
         resource.availabilityWindows.filter(
@@ -980,14 +913,11 @@ export const getMatchingResourcesService =
             new Date(
               window.startAt
             ) <= requiredFrom &&
-
             new Date(
               window.endAt
             ) >= requiredUntil &&
-
             window.availableQuantity > 0
         );
-
 
       if (
         coveringWindows.length === 0
@@ -995,10 +925,9 @@ export const getMatchingResourcesService =
         continue;
       }
 
-
       /*
-       * If multiple windows cover the same period,
-       * use the window with the highest capacity.
+       * If multiple windows cover the requirement,
+       * select highest available capacity.
        */
       const windowCapacity =
         Math.max(
@@ -1008,10 +937,9 @@ export const getMatchingResourcesService =
           )
         );
 
-
       /*
-       * Never allow window capacity to exceed
-       * Resource.totalQuantity.
+       * Never consider capacity higher than
+       * total Resource inventory.
        */
       const effectiveCapacity =
         Math.min(
@@ -1019,20 +947,20 @@ export const getMatchingResourcesService =
           windowCapacity
         );
 
-
       /*
-       * Active reservations for this resource.
+       * Get existing active reservations
+       * for this Resource.
        */
       const reservations =
         reservationsByResource.get(
           resource._id.toString()
         ) ?? [];
 
-
       /*
-       * Calculate peak quantity already reserved
-       * during the requirement period.
+       * Calculate the maximum quantity
+       * concurrently reserved.
        */
+      //after grouping reservations per resource
       const concurrentlyReserved =
         getMaximumConcurrentReservedQuantity({
           reservations,
@@ -1040,9 +968,8 @@ export const getMatchingResourcesService =
           requiredUntil,
         });
 
-
       /*
-       * Actual quantity still available.
+       * Actual remaining availability.
        */
       const availableQuantity =
         Math.max(
@@ -1051,9 +978,8 @@ export const getMatchingResourcesService =
             concurrentlyReserved
         );
 
-
       /*
-       * Resource has no remaining capacity.
+       * Resource currently has no capacity.
        */
       if (
         availableQuantity <= 0
@@ -1061,24 +987,23 @@ export const getMatchingResourcesService =
         continue;
       }
 
-
       /*
-       * Can this Resource satisfy the entire
-       * remaining requirement?
+       * Can this Resource satisfy everything
+       * still needed?
        */
       const canFullySatisfy =
         availableQuantity >=
         remainingQuantity;
 
-
       /*
        * -------------------------------------------------
-       * Match score
+       * Matching score
        *
-       * Full availability = 100
+       * Full match:
+       * 100
        *
-       * Partial availability =
-       * proportional score between 50-99.
+       * Partial:
+       * 50 - 99 depending on available quantity.
        * -------------------------------------------------
        */
 
@@ -1094,9 +1019,42 @@ export const getMatchingResourcesService =
                   49
             );
 
-
       matches.push({
         resource,
+
+        /*
+         * Useful relationship information.
+         */
+        initiative: {
+          _id:
+            initiativeId,
+
+          municipality:
+            municipalityId,
+
+          leadOrganization:
+            leadOrganizationId,
+        },
+
+        resourceRequirement: {
+          _id:
+            requirement._id,
+
+          name:
+            requirement.name,
+
+          category:
+            requirement.category,
+
+          unit:
+            requirement.unit,
+
+          serviceArea:
+            requirement.serviceArea,
+
+          status:
+            requirement.status,
+        },
 
         matchScore,
 
@@ -1124,20 +1082,18 @@ export const getMatchingResourcesService =
         availability: {
           requiredFrom,
           requiredUntil,
-
           effectiveCapacity,
         },
       });
     }
 
-
     /*
      * ---------------------------------------------------
-     * Ranking
+     * Rank matching Resources
      *
-     * 1. Full matches
-     * 2. Highest score
-     * 3. Highest available quantity
+     * 1. Full matches first
+     * 2. Higher match score
+     * 3. Higher available quantity
      * ---------------------------------------------------
      */
 
@@ -1147,12 +1103,14 @@ export const getMatchingResourcesService =
           a.canFullySatisfy !==
           b.canFullySatisfy
         ) {
-          return Number(
-            b.canFullySatisfy
-          ) -
+          return (
+            Number(
+              b.canFullySatisfy
+            ) -
             Number(
               a.canFullySatisfy
-            );
+            )
+          );
         }
 
         if (
@@ -1172,6 +1130,15 @@ export const getMatchingResourcesService =
       }
     );
 
-
     return matches;
   };
+  //breakdown example
+  /**INITIATIVE REQUIREMENT
+Needs originally:      5 kits
+Already covered:       3 kits
+Still needs:           2 kits
+
+CANDIDATE RESOURCE
+Capacity during dates: 10 kits
+Already booked:        4 kits
+Still available:       6 kits */
