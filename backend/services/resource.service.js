@@ -1087,49 +1087,7 @@ export const getMatchingResourcesService =
       });
     }
 
-    /*
-     * ---------------------------------------------------
-     * Rank matching Resources
-     *
-     * 1. Full matches first
-     * 2. Higher match score
-     * 3. Higher available quantity
-     * ---------------------------------------------------
-     */
-
-    matches.sort(
-      (a, b) => {
-        if (
-          a.canFullySatisfy !==
-          b.canFullySatisfy
-        ) {
-          return (
-            Number(
-              b.canFullySatisfy
-            ) -
-            Number(
-              a.canFullySatisfy
-            )
-          );
-        }
-
-        if (
-          b.matchScore !==
-          a.matchScore
-        ) {
-          return (
-            b.matchScore -
-            a.matchScore
-          );
-        }
-
-        return (
-          b.availableQuantity -
-          a.availableQuantity
-        );
-      }
-    );
-
+   
     return matches;
   };
   //breakdown example
