@@ -6,7 +6,7 @@ import authRoutes from "./auth.routes.js";
 import resourceRoutes from "./resource.routes.js";
 import contributionOfferRoutes from "./contribution-offer.routes.js";
 import workItemsRoutes from "./workItems.routes.js";
-
+import resourceRequestsRoutes from "./resource-request.routes.js"
 const router = express.Router();
 
 router.get("/health", (req, res) => {
@@ -22,6 +22,7 @@ router.use("/users", userRoutes);
 router.use("/issues", issueRoutes);
 router.use("/initiatives", initiativeRoutes);
 router.use("/resources", resourceRoutes);
+router.use("/resourceRequests", resourceRequestsRoutes);
 router.use("/workItems", workItemsRoutes);
 router.use("/contributionOffers", contributionOfferRoutes);
 export default router;

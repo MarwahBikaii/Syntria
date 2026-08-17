@@ -1,7 +1,8 @@
 import express from "express";
 
 import {
-  reviewResourceRequest,
+  reviewResourceRequest,  sendrequestforMatchingResources
+
 } from "../controllers/resource-request.controller.js";
 
 import {
@@ -27,5 +28,17 @@ router.patch(
   ),
   reviewResourceRequest
 );
+
+
+router.post(
+  "/:resourceId/:requirementId/send-request",
+  authorizeRoles(
+    USER_ROLES.COMMUNITY_ORGANIZATION
+,
+    USER_ROLES.MUNICIPALITY
+  ),
+  sendrequestforMatchingResources
+);
+
 
 export default router;

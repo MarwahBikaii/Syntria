@@ -4,7 +4,7 @@ import {
 
 import {
   createResourceRequestService,
-  reviewResourceRequestService,
+  sendrequestforMatchingResourcesService,reviewResourceRequestService,
 } from "../services/resource-request.service.js";
 
 export const createResourceRequest =
@@ -53,3 +53,25 @@ export const reviewResourceRequest =
       data: result,
     });
   });
+
+    export const sendrequestforMatchingResources=  
+    
+    asyncHandler(async (req, res) => {
+    const result =
+      await sendrequestforMatchingResourcesService({
+        resourceId:req.params.resourceid, //"resourceId" is accessed in the service
+        requirementId:req.params.requirementid,
+        notes: req.body.notes,
+        authenticatedUser:
+          req.user,
+      });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "The request to the matching resource is sent successfully.",
+      data: result,
+    });
+  });
+
+  //may add send to to all matching resources
