@@ -5,7 +5,7 @@ import { Resource } from "../models/resource.model.js";
 import { ResourceRequirement } from "../models/resource-requirement.model.js";
 import { ResourceRequest } from "../models/resource-request.model.js";
 import { ResourceReservation } from "../models/resource-reservation.model.js";
-import {getMatchingResourcesService} from "./resource.service"
+import {getMatchingResourcesService} from "./resource.service.js"
 import {
   ACCOUNT_STATUSES,
   INITIATIVE_STATUSES,
@@ -714,7 +714,7 @@ export const reviewResourceRequestService =
   };
 
 
-  export const sendRequestForMatchingResourcesService =
+  export const sendrequestforMatchingResourcesService =
   async ({
     resourceRequirementId,
     resourceId,

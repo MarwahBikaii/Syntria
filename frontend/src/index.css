@@ -1,0 +1,16 @@
+@import url("https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&display=swap");
+
+@import "tailwindcss";
+
+@plugin "daisyui";
+
+body {
+  font-family: "Google Sans", sans-serif;
+}
+
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: 2rem;
+}

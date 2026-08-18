@@ -715,6 +715,7 @@ export const getMatchingResourcesService =
         verificationStatus:
           VERIFICATION_STATUSES.VERIFIED,
       }).distinct("_id");
+      //get array of every document's id
 
     if (
       eligiblePartnerIds.length === 0
