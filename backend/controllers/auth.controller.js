@@ -22,43 +22,47 @@ const organizationAccountTypes = [
   USER_ROLES.RESOURCE_PARTNER,
 ];
 
-const signToken = (userId) => {
-  if (!process.env.JWT_ACCESS_SECRET) {
-    throw new Error("JWT_SECRET is not configured.");
-  }
+        const signToken = (id, res) => {
+            const token = jwt.sign(
+              { id }, //payload
+              process.env.JWT_SECRET, { //secret key
+            expiresIn: process.env.JWT_EXPIRES_IN, //expiring period
+            });
+        
+            // Set the JWT as a cookie
+            // name , value, options
+            res.cookie('jwt', token, {
+            httpOnly: true,// Blocks client-side JavaScript access 
+            secure: process.env.NODE_ENV === 'production', //make sure cookie is only sent over encrypted https connections
+            // Set to true in production, false in development
+            sameSite: 'strict',// Blocks cross-site transmission 
+            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+            });
+        
+            return token;
+        };
 
-  return jwt.sign(
-    {
-      id: userId,
-    },
-    process.env.JWT_ACCESS_SECRET,
-    {
-      expiresIn: process.env.JWT_ACCESS_EXPIRES_IN  || "30d",
-    },
-  );
-};
-
-const cookieOptions = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-  maxAge: COOKIE_MAX_AGE_MS,
-  path: "/",
-};
-
-const createSendToken = (user, statusCode, res) => {
-  const token = signToken(user._id.toString());
-
-  res.cookie("jwt", token, cookieOptions);
-
-  return res.status(statusCode).json({
-    success: true,
-    token,
-    data: {
-      user,
-    },
+     const createSendToken = (user, statusCode, res) => {
+  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN,
   });
+
+  res.cookie("jwt", token, {
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    httpOnly: true,
+    sameSite: "Strict",
+  });
+
+  res.status(statusCode).json({
+    status: "success",
+    token, // ✅ Sending token in response
+    data: { user },
+  });
+
+  return token; // ✅ Return the generated token
 };
+
+
 
 export const signup = async (req, res) => {
   try {

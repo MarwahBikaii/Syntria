@@ -1,9 +1,10 @@
 import express from 'express'
 import db from './database.js'
 import cookieParser from "cookie-parser";
+import cors from "cors"
 const app = express();
 
-import cors from "cors"
+
 // import helmet from "helmet";
 // import morgan from "morgan";
 
@@ -88,7 +89,6 @@ app.use(cookieParser());
 
 
 app.use(express.json())
-
 // app.use(
 //   express.urlencoded({
 //     extended: true,
