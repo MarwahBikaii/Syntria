@@ -6,6 +6,8 @@ import Footer from "./components/Footer.jsx"
 import Home from "./pages/Home.jsx"
 import Login from "./components/auth/Login.jsx"
 import Register from './components/auth/Register.jsx';
+import UserHome from './pages/User/UserHome.jsx'
+import Profile from "./pages/User/Profile.jsx"
 function App() {
   return (
     <BrowserRouter>
@@ -14,6 +16,9 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/Register" element={<Register />} />
+        <Route path="/Home" element={<UserHome />} />
+
+        <Route path="/profile" element={<Profile />} />
 
       </Routes>
       <Footer></Footer>

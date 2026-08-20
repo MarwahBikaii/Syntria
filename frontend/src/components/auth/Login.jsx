@@ -53,6 +53,8 @@ const handleLogin = (event)=>
   text: "Welcome back",
   icon: "success"
 });
+localStorage.setItem("isLoggedin", true)
+navigation.navigate('/Home')
         })
 
       .catch ( (err)=>{
