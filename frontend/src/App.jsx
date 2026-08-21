@@ -9,6 +9,7 @@ import Register from './components/auth/Register.jsx';
 import UserHome from './pages/User/UserHome.jsx'
 import Profile from "./pages/User/Profile.jsx"
 import Volunteer from "./pages/User/Volunteer.jsx"
+import Report from "./pages/User/Report.jsx"
 function App() {
   return (
     <BrowserRouter>
@@ -21,6 +22,7 @@ function App() {
 
         <Route path="/profile" element={<Profile />} />
         <Route path="/volunteer/activate" element={<Volunteer />} />
+        <Route path="/report" element={<Report />} />
 
 
       </Routes>

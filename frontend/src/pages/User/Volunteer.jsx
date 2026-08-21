@@ -79,7 +79,6 @@ const  handleVolunteer= async (event)=>{
     event.preventDefault();
 
     try{
-       console.log("FORM DATA BEFORE REQUEST:", formData);
 
         const res= await axios.put("http://localhost:3001/api/users/me/volunteer-profile",
          
@@ -91,7 +90,6 @@ const  handleVolunteer= async (event)=>{
     withCredentials:                true,
   })
 
-      console.log("BACKEND RESPONSE:", res.data);
   Swal.fire({
     title: "Your volunteer profile has been activated!",
     text: "Welcome to the volunteering community",

@@ -1,5 +1,7 @@
 import { getUser } from "../../context/auth.js";
-import { useState, useEffect } from "react";
+import { useState, useEffect} from "react";
+import { Link } from "react-router-dom";
+
 import UserStats from "./UsetStats.jsx";
 
 export default function UserHome() {
@@ -76,9 +78,9 @@ export default function UserHome() {
               Start making an impact with Syntria!
             </p>
 
-            <button className="btn btn-success">
+            <Link to="/report" className="btn btn-success">
               Get Started
-            </button>
+            </Link>
           </div>
         </div>
       </div>
