@@ -243,6 +243,7 @@ export const activateVolunteerProfile = async (
       req.body,
       volunteerProfileFields
     );
+    console.log("HITTTTTTTT",updates)
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({

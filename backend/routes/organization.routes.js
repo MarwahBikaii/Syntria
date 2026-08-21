@@ -1,12 +1,9 @@
-const express = require("express");
+import express from "express";
 
 const router = express.Router();
+import {getOrganizations } from "../controllers/organizations.controller.js"
 
-router.get("/", (req, res) => {
-  res.status(501).json({
-    success: false,
-    message: "Organization listing is not implemented yet.",
-  });
-});
+router.get("/",
+  getOrganizations)
 
-module.exports = router;
+export default router;

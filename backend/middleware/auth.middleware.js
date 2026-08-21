@@ -25,7 +25,11 @@ export const authenticate = async (
   next
 ) => {
   try {
+
+ 
     const token = extractToken(req);
+
+
 
     if (!token) {
       return res.status(401).json({
@@ -40,8 +44,9 @@ export const authenticate = async (
     try {
       decoded = jwt.verify(
         token,
-        process.env.JWT_ACCESS_SECRET
+        process.env.JWT_SECRET
       );
+      console.log("decoded",decoded)
     } catch (error) {
       if (error.name === "TokenExpiredError") {
         return res.status(401).json({
@@ -60,6 +65,16 @@ export const authenticate = async (
 
     const currentUser =
       await User.findById(decoded.id);
+
+      console.log(
+  "Decoded ID:",
+  decoded.id
+);
+
+console.log(
+  "Found user:",
+  currentUser
+);
 
     if (!currentUser) {
       return res.status(401).json({

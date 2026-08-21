@@ -1,4 +1,5 @@
 import express from "express";
+import organizationRouter from "./organization.routes.js";
 import initiativeRoutes from "./initiative.routes.js";
 import issueRoutes from "./issue.routes.js";
 import userRoutes from "./user.routes.js";
@@ -25,4 +26,7 @@ router.use("/resources", resourceRoutes);
 router.use("/resourceRequests", resourceRequestsRoutes);
 router.use("/workItems", workItemsRoutes);
 router.use("/contributionOffers", contributionOfferRoutes);
+router.use("/organizations", organizationRouter);
+
+
 export default router;

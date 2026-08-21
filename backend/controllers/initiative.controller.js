@@ -52,6 +52,7 @@ export const createInitiative =
     const initiative =
       await Initiative.find({});
 
+    console.log(initiative)
     return res.status(200).json({
       success: true,
       data: {

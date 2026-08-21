@@ -195,7 +195,7 @@ export const createIssueService = async ({
       createdBy:
         authenticatedUser._id,
 
-      media: uploadedMedia,
+      media: uploadedMedia || [],
 
       tags:
         Array.isArray(tags)
